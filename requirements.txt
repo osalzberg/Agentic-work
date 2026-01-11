@@ -7,3 +7,5 @@ click
 openai>=1.0.0
 python-dotenv
 pytest
+pandas
+openpyxl

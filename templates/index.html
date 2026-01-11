@@ -1817,13 +1817,13 @@
             <!-- Setup Section -->
             <div class="setup-section">
                 <h2>🔧 Workspace Setup</h2>                <div class="input-group">
-                    <input type="text" id="workspaceId" placeholder="Enter your Log Analytics Workspace ID" value="">
-                    <button id="setWorkspaceBtn" class="btn btn-primary workspace-btn" onclick="setupWorkspace()" aria-live="polite" aria-label="Set workspace">
+                    <input type="text" id="workspaceId" placeholder="Enter your Log Analytics Workspace ID" value="81a662b5-8541-481b-977d-5d956616ac5e">
+                    <button id="setWorkspaceBtn" class="btn btn-primary workspace-btn" onclick="console.log('Button clicked!'); setupWorkspace()" aria-live="polite" aria-label="Set workspace">
                         <span class="ws-icon-slot" aria-hidden="true">
                             <span class="ws-spinner"></span>
                             <span class="ws-success">✔</span>
                         </span>
-                        <span class="ws-label">Set workspace</span>
+                        <span class="ws-label">🚀 Connect Workspace</span>
                     </button>
                 </div>
                 <div id="setupStatus" style="display:none"></div>
@@ -1878,6 +1878,119 @@
                     </div>
                     <div id="workspaceTimestamp" class="timestamp"></div>                </div>
             </div>          
+              
+            <!-- Batch Testing Section -->
+            <div class="query-section" style="margin-top: 30px; border-top: 3px solid #e9ecef; padding-top: 30px;">
+                <h2>📊 Batch Test Queries</h2>
+                <p style="color: #666; margin-bottom: 15px;">Upload an Excel file with prompts and download results with generated KQL queries</p>
+                
+                <div style="background: #f8f9fa; border-radius: 12px; padding: 20px; margin-bottom: 20px;">
+                    <h4 style="margin-bottom: 10px; color: #333;">📋 Excel File Format:</h4>
+                    <ul style="margin-left: 20px; color: #666; line-height: 1.8;">
+                        <li><strong>Column 1 - Prompt:</strong> Your natural language questions (required)</li>
+                        <li><strong>Column 2 - Expected Query:</strong> Optional reference (ignored by system)</li>
+                        <li><strong>Column 3 - Generated Query:</strong> Will be filled with KQL output</li>
+                        <li><strong>Column 4 - Reason:</strong> Will be filled with success/error status</li>
+                    </ul>
+                </div>
+
+                <div class="input-group" style="margin-bottom: 15px;">
+                    <input 
+                        type="file" 
+                        id="batchFileInput" 
+                        accept=".xlsx,.xls" 
+                        style="display: none;"
+                        onchange="handleBatchFileSelect(event)"
+                    />
+                    <button class="btn btn-primary" onclick="document.getElementById('batchFileInput').click()" style="width: 200px;">
+                        📁 Choose Excel File
+                    </button>
+                    <span id="selectedFileName" style="color: #666; font-style: italic;">No file selected</span>
+                </div>
+
+                <button 
+                    id="processBatchBtn" 
+                    class="btn btn-success" 
+                    onclick="processBatchFile()" 
+                    disabled 
+                    style="width: 100%; opacity: 0.6; cursor: not-allowed;">
+                    🚀 Process Batch Test
+                </button>
+
+                <!-- Batch Progress Section -->
+                <div id="batchProgressSection" style="display: none; margin-top: 20px; background: #f8f9fa; border-radius: 12px; padding: 20px;">
+                    <h4 style="margin-bottom: 15px; color: #333;">⏳ Processing...</h4>
+                    <div style="background: white; border-radius: 8px; padding: 15px; margin-bottom: 15px;">
+                        <div id="batchProgressBar" style="background: #e9ecef; border-radius: 4px; height: 24px; overflow: hidden;">
+                            <div id="batchProgressFill" style="background: linear-gradient(90deg, #667eea 0%, #764ba2 100%); height: 100%; width: 0%; transition: width 0.3s ease; display: flex; align-items: center; justify-content: center; color: white; font-weight: bold; font-size: 0.9rem;"></div>
+                        </div>
+                        <div id="batchProgressText" style="margin-top: 10px; color: #666; text-align: center;"></div>
+                    </div>
+                    
+                    <!-- Live Results Feed -->
+                    <div id="liveResultsFeed" style="background: white; border-radius: 8px; padding: 15px; max-height: 400px; overflow-y: auto; border: 1px solid #e9ecef;">
+                        <h5 style="margin-bottom: 10px; color: #333; font-size: 0.95rem;">📋 Live Results</h5>
+                        <div id="liveResultsContent"></div>
+                    </div>
+                </div>
+
+                <!-- Batch Results Summary -->
+                <div id="batchResultsSection" style="display: none; margin-top: 20px;">
+                    <h4 style="margin-bottom: 15px; color: #333;">✅ Batch Test Complete!</h4>
+                    <div style="background: #f8f9fa; border-radius: 12px; padding: 20px; margin-bottom: 15px;">
+                        <div id="batchSummary" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 15px;"></div>
+                    </div>
+                    
+                    <!-- Detailed Results Accordion -->
+                    <div id="batchDetailsSection" style="margin-bottom: 15px;">
+                        <!-- Errors Section -->
+                        <div style="background: white; border-radius: 8px; margin-bottom: 10px; border: 1px solid #e9ecef; overflow: hidden;">
+                            <div onclick="toggleBatchSection('errors')" style="padding: 15px; cursor: pointer; background: #fff5f5; border-bottom: 1px solid #fee; display: flex; justify-content: space-between; align-items: center;">
+                                <div style="display: flex; align-items: center; gap: 10px;">
+                                    <span style="font-weight: bold; color: #dc3545;">❌ Errors</span>
+                                    <span id="errorCount" style="background: #dc3545; color: white; padding: 2px 8px; border-radius: 12px; font-size: 0.85rem;">0</span>
+                                </div>
+                                <span id="errorsChevron" style="transition: transform 0.3s;">▼</span>
+                            </div>
+                            <div id="errorsContent" style="display: none; max-height: 400px; overflow-y: auto;">
+                                <div id="errorsList" style="padding: 15px;"></div>
+                            </div>
+                        </div>
+                        
+                        <!-- Skipped Section -->
+                        <div style="background: white; border-radius: 8px; margin-bottom: 10px; border: 1px solid #e9ecef; overflow: hidden;">
+                            <div onclick="toggleBatchSection('skipped')" style="padding: 15px; cursor: pointer; background: #f8f9fa; border-bottom: 1px solid #e9ecef; display: flex; justify-content: space-between; align-items: center;">
+                                <div style="display: flex; align-items: center; gap: 10px;">
+                                    <span style="font-weight: bold; color: #6c757d;">⏭️ Skipped</span>
+                                    <span id="skippedCount" style="background: #6c757d; color: white; padding: 2px 8px; border-radius: 12px; font-size: 0.85rem;">0</span>
+                                </div>
+                                <span id="skippedChevron" style="transition: transform 0.3s;">▼</span>
+                            </div>
+                            <div id="skippedContent" style="display: none; max-height: 400px; overflow-y: auto;">
+                                <div id="skippedList" style="padding: 15px;"></div>
+                            </div>
+                        </div>
+                        
+                        <!-- Success Section -->
+                        <div style="background: white; border-radius: 8px; border: 1px solid #e9ecef; overflow: hidden;">
+                            <div onclick="toggleBatchSection('success')" style="padding: 15px; cursor: pointer; background: #f0f9f4; border-bottom: 1px solid #d1f2e0; display: flex; justify-content: space-between; align-items: center;">
+                                <div style="display: flex; align-items: center; gap: 10px;">
+                                    <span style="font-weight: bold; color: #28a745;">✅ Successful</span>
+                                    <span id="successCount" style="background: #28a745; color: white; padding: 2px 8px; border-radius: 12px; font-size: 0.85rem;">0</span>
+                                </div>
+                                <span id="successChevron" style="transition: transform 0.3s;">▼</span>
+                            </div>
+                            <div id="successContent" style="display: none; max-height: 400px; overflow-y: auto;">
+                                <div id="successList" style="padding: 15px;"></div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <button id="downloadResultsBtn" class="btn btn-success" onclick="downloadBatchResults()" style="width: 100%;">
+                        💾 Download Results Excel File
+                    </button>
+                </div>
+            </div>
               
             <!-- KQL Query Section -->
             <div class="kql-query-section">
@@ -3756,7 +3869,7 @@ async function setupWorkspace() {
     const workspaceId = document.getElementById('workspaceId').value.trim();
 
     if (!workspaceId) {
-        alert('Please enter a workspace ID');
+        showError('Please enter a workspace ID');
         return;
     }
 
@@ -3802,6 +3915,10 @@ async function setupWorkspace() {
             body: JSON.stringify({ workspace_id: workspaceId })
         });
 
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+
         const data = await response.json();
         console.log('API response:', data); // Debug log
 
@@ -3814,16 +3931,23 @@ async function setupWorkspace() {
             startWorkspaceSchemaPolling();
         } else {
             console.error('Setup failed:', data.error); // Debug log
-            alert('Setup failed: ' + data.error);
+            showError('Setup failed: ' + data.error);
             updateStatus(false, data.error);
             // Re-enable button on error
             if (btn) {
                 btn.disabled = false;
                 btn.classList.remove('loading');
+                btn.style.opacity = '1';
+                btn.style.cursor = 'pointer';
                 const label = btn.querySelector('.ws-label');
                 if (label) {
                     label.textContent = 'Set workspace';
                 }
+            }
+            // Clear status message
+            const setupStatus = document.getElementById('setupStatus');
+            if (setupStatus) {
+                setupStatus.style.display = 'none';
             }
             // Re-enable schema button on error
             const schemaBtn = document.getElementById('showSchemaBtn');
@@ -3836,7 +3960,7 @@ async function setupWorkspace() {
         }
     } catch (error) {
         console.error('Network error:', error); // Debug log
-        alert('Connection failed: ' + error.message);
+        showError('Connection failed: ' + error.message);
         updateStatus(false, `Connection failed: ${error.message}`);
         // Re-enable button on error
         if (btn) {
@@ -4342,6 +4466,421 @@ async function processQuestionWithRetry(question) {
         document.addEventListener('DOMContentLoaded', function() {
             updateUIElementsState();
         });
+
+        // ============= Batch Testing Functions =============
+        let batchFileData = null;
+        let batchFileName = '';
+        let batchResultsData = null;
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        function handleBatchFileSelect(event) {
+            const file = event.target.files[0];
+            if (file) {
+                batchFileName = file.name;
+                batchFileData = file;
+                document.getElementById('selectedFileName').textContent = file.name;
+                document.getElementById('selectedFileName').style.color = '#667eea';
+                document.getElementById('selectedFileName').style.fontStyle = 'normal';
+                document.getElementById('processBatchBtn').disabled = false;
+                document.getElementById('processBatchBtn').style.opacity = '1';
+                document.getElementById('processBatchBtn').style.cursor = 'pointer';
+                
+                // Hide previous results
+                document.getElementById('batchProgressSection').style.display = 'none';
+                document.getElementById('batchResultsSection').style.display = 'none';
+            }
+        }
+
+        async function processBatchFile() {
+            if (!batchFileData) {
+                showError('Please select a file first');
+                return;
+            }
+
+            if (!isConnected) {
+                showError('Please setup workspace first');
+                return;
+            }
+
+            // Show progress
+            document.getElementById('batchProgressSection').style.display = 'block';
+            document.getElementById('batchResultsSection').style.display = 'none';
+            document.getElementById('processBatchBtn').disabled = true;
+            document.getElementById('processBatchBtn').style.opacity = '0.6';
+            document.getElementById('liveResultsContent').innerHTML = '';
+            
+            updateBatchProgress(0, 'Reading Excel file...');
+
+            try {
+                // Read Excel file using SheetJS (we'll add this library)
+                // For now, use FormData to upload and read on backend first
+                const formData = new FormData();
+                formData.append('file', batchFileData);
+
+                updateBatchProgress(5, 'Parsing Excel file...');
+
+                // First, upload and parse the file
+                const parseResponse = await fetch('/api/batch-test/parse', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const parseData = await parseResponse.json();
+
+                if (!parseData.success) {
+                    throw new Error(parseData.error || 'Failed to parse Excel file');
+                }
+
+                const prompts = parseData.prompts;
+                const totalRows = prompts.length;
+                const results = [];
+                
+                updateBatchProgress(10, `Processing ${totalRows} prompts...`);
+
+                // Process each prompt one by one
+                for (let i = 0; i < prompts.length; i++) {
+                    const prompt = prompts[i];
+                    const rowNum = i + 1;
+                    const progressPercent = 10 + Math.floor((i / totalRows) * 85);
+                    
+                    // Add to live feed as "processing"
+                    addLiveResult(rowNum, prompt, 'processing', '');
+                    
+                    updateBatchProgress(progressPercent, `Processing ${rowNum} of ${totalRows}: ${prompt.substring(0, 40)}...`);
+
+                    if (!prompt || prompt.trim() === '') {
+                        // Update live feed as "skipped"
+                        updateLiveResult(rowNum, 'skipped', 'Empty prompt');
+                        results.push({
+                            row: rowNum,
+                            prompt: '',
+                            status: 'skipped',
+                            reason: 'Empty prompt',
+                            query: '',
+                            output: ''
+                        });
+                        continue;
+                    }
+
+                    try {
+                        // Call the query API for each prompt
+                        const queryResponse = await fetch('/api/query', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ question: prompt })
+                        });
+
+                        const queryData = await queryResponse.json();
+
+                        if (queryData.success && queryData.result && queryData.result.kql) {
+                            const kqlQuery = queryData.result.kql;
+                            let queryOutput = '';
+                            
+                            // Execute the query to get output
+                            try {
+                                const execResponse = await fetch('/api/query-execute', {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({ query: kqlQuery })
+                                });
+                                
+                                const execData = await execResponse.json();
+                                
+                                if (execData.success && execData.tables && execData.tables.length > 0) {
+                                    const table = execData.tables[0];
+                                    queryOutput = `Rows: ${table.row_count}, Columns: ${table.columns.length}\nColumns: ${table.columns.join(', ')}`;
+                                } else {
+                                    queryOutput = execData.error || 'No results';
+                                }
+                            } catch (execError) {
+                                queryOutput = `Execution error: ${execError.message}`;
+                            }
+                            
+                            updateLiveResult(rowNum, 'success', kqlQuery);
+                            results.push({
+                                row: rowNum,
+                                prompt: prompt.substring(0, 100),
+                                status: 'success',
+                                query_length: kqlQuery.length,
+                                query: kqlQuery,
+                                output: queryOutput
+                            });
+                        } else {
+                            const error = queryData.error || 'Failed to generate query';
+                            updateLiveResult(rowNum, 'error', error);
+                            results.push({
+                                row: rowNum,
+                                prompt: prompt.substring(0, 100),
+                                status: 'error',
+                                reason: error,
+                                query: '',
+                                output: ''
+                            });
+                        }
+                    } catch (error) {
+                        updateLiveResult(rowNum, 'error', error.message);
+                        results.push({
+                            row: rowNum,
+                            prompt: prompt.substring(0, 100),
+                            status: 'error',
+                            reason: error.message,
+                            query: '',
+                            output: ''
+                        });
+                    }
+                }
+
+                updateBatchProgress(95, 'Building Excel file...');
+
+                // Now send all results to backend to build Excel
+                const buildResponse = await fetch('/api/batch-test/build', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        filename: batchFileName,
+                        results: results
+                    })
+                });
+
+                const buildData = await buildResponse.json();
+
+                if (buildData.success) {
+                    updateBatchProgress(100, 'Complete!');
+                    
+                    // Store results for download
+                    batchResultsData = {
+                        fileData: buildData.file_data,
+                        filename: buildData.filename
+                    };
+
+                    // Calculate summary
+                    const summary = {
+                        total: results.length,
+                        success: results.filter(r => r.status === 'success').length,
+                        errors: results.filter(r => r.status === 'error').length,
+                        skipped: results.filter(r => r.status === 'skipped').length
+                    };
+
+                    // Show summary
+                    displayBatchSummary(summary, results);
+                    
+                    setTimeout(() => {
+                        document.getElementById('batchProgressSection').style.display = 'none';
+                        document.getElementById('batchResultsSection').style.display = 'block';
+                    }, 500);
+                } else {
+                    throw new Error(buildData.error || 'Failed to build Excel file');
+                }
+            } catch (error) {
+                showError(`Batch processing failed: ${error.message}`);
+                document.getElementById('batchProgressSection').style.display = 'none';
+            } finally {
+                document.getElementById('processBatchBtn').disabled = false;
+                document.getElementById('processBatchBtn').style.opacity = '1';
+            }
+        }
+
+        function addLiveResult(rowNum, prompt, status, message) {
+            const feed = document.getElementById('liveResultsContent');
+            const resultId = `live-result-${rowNum}`;
+            
+            let statusIcon, statusColor, statusBg;
+            if (status === 'processing') {
+                statusIcon = '⏳';
+                statusColor = '#667eea';
+                statusBg = '#f0f3ff';
+            } else if (status === 'success') {
+                statusIcon = '✅';
+                statusColor = '#28a745';
+                statusBg = '#f0f9f4';
+            } else if (status === 'error') {
+                statusIcon = '❌';
+                statusColor = '#dc3545';
+                statusBg = '#fff5f5';
+            } else if (status === 'skipped') {
+                statusIcon = '⏭️';
+                statusColor = '#6c757d';
+                statusBg = '#f8f9fa';
+            }
+            
+            const html = `
+                <div id="${resultId}" style="margin-bottom: 8px; padding: 10px; background: ${statusBg}; border-left: 3px solid ${statusColor}; border-radius: 4px; font-size: 0.85rem;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                        <span style="font-weight: bold; color: ${statusColor};">${statusIcon} Row ${rowNum}</span>
+                        <span style="color: #999; font-size: 0.8rem;" class="status-text">${status === 'processing' ? 'Processing...' : ''}</span>
+                    </div>
+                    <div style="color: #666; font-size: 0.85rem;" class="prompt-text">${escapeHtml(prompt.substring(0, 60))}${prompt.length > 60 ? '...' : ''}</div>
+                    <div class="result-message" style="color: ${statusColor}; font-size: 0.8rem; margin-top: 4px; display: none;"></div>
+                </div>
+            `;
+            
+            feed.insertAdjacentHTML('afterbegin', html);
+            
+            // Auto-scroll to top to show latest
+            feed.scrollTop = 0;
+        }
+
+        function updateLiveResult(rowNum, status, message) {
+            const resultEl = document.getElementById(`live-result-${rowNum}`);
+            if (!resultEl) return;
+            
+            let statusIcon, statusColor, statusBg;
+            if (status === 'success') {
+                statusIcon = '✅';
+                statusColor = '#28a745';
+                statusBg = '#f0f9f4';
+                message = `Query generated (${message.length} chars)`;
+            } else if (status === 'error') {
+                statusIcon = '❌';
+                statusColor = '#dc3545';
+                statusBg = '#fff5f5';
+            } else if (status === 'skipped') {
+                statusIcon = '⏭️';
+                statusColor = '#6c757d';
+                statusBg = '#f8f9fa';
+            }
+            
+            resultEl.style.background = statusBg;
+            resultEl.style.borderLeftColor = statusColor;
+            resultEl.querySelector('.status-text').textContent = '';
+            resultEl.querySelector('.status-text').parentElement.querySelector('span').innerHTML = `${statusIcon} Row ${rowNum}`;
+            
+            const messageEl = resultEl.querySelector('.result-message');
+            if (message) {
+                messageEl.textContent = message;
+                messageEl.style.display = 'block';
+                messageEl.style.color = statusColor;
+            }
+        }
+
+        function updateBatchProgress(percent, text) {
+            document.getElementById('batchProgressFill').style.width = percent + '%';
+            document.getElementById('batchProgressFill').textContent = percent + '%';
+            document.getElementById('batchProgressText').textContent = text;
+        }
+
+        function displayBatchSummary(summary, results) {
+            const summaryHtml = `
+                <div style="text-align: center; padding: 15px; background: white; border-radius: 8px;">
+                    <div style="font-size: 2rem; font-weight: bold; color: #667eea;">${summary.total}</div>
+                    <div style="color: #666; margin-top: 5px;">Total Rows</div>
+                </div>
+                <div style="text-align: center; padding: 15px; background: white; border-radius: 8px;">
+                    <div style="font-size: 2rem; font-weight: bold; color: #28a745;">✅ ${summary.success}</div>
+                    <div style="color: #666; margin-top: 5px;">Successful</div>
+                </div>
+                <div style="text-align: center; padding: 15px; background: white; border-radius: 8px;">
+                    <div style="font-size: 2rem; font-weight: bold; color: #dc3545;">❌ ${summary.errors}</div>
+                    <div style="color: #666; margin-top: 5px;">Errors</div>
+                </div>
+                <div style="text-align: center; padding: 15px; background: white; border-radius: 8px;">
+                    <div style="font-size: 2rem; font-weight: bold; color: #6c757d;">⏭️ ${summary.skipped}</div>
+                    <div style="color: #666; margin-top: 5px;">Skipped</div>
+                </div>
+            `;
+            document.getElementById('batchSummary').innerHTML = summaryHtml;
+            
+            // Update counts in accordion
+            document.getElementById('errorCount').textContent = summary.errors;
+            document.getElementById('skippedCount').textContent = summary.skipped;
+            document.getElementById('successCount').textContent = summary.success;
+            
+            // Populate detailed lists
+            const errorsList = document.getElementById('errorsList');
+            const skippedList = document.getElementById('skippedList');
+            const successList = document.getElementById('successList');
+            
+            const errors = results.filter(r => r.status === 'error');
+            const skipped = results.filter(r => r.status === 'skipped');
+            const success = results.filter(r => r.status === 'success');
+            
+            // Build errors list
+            if (errors.length > 0) {
+                errorsList.innerHTML = errors.map(r => `
+                    <div style="margin-bottom: 10px; padding: 10px; background: #fff5f5; border-left: 3px solid #dc3545; border-radius: 4px;">
+                        <div style="font-weight: bold; color: #dc3545; margin-bottom: 5px;">Row ${r.row}</div>
+                        <div style="color: #666; margin-bottom: 5px; font-size: 0.9rem;">${escapeHtml(r.prompt || 'No prompt')}</div>
+                        <div style="color: #dc3545; font-size: 0.85rem; font-style: italic;">${escapeHtml(r.reason || 'Unknown error')}</div>
+                    </div>
+                `).join('');
+            } else {
+                errorsList.innerHTML = '<div style="color: #666; text-align: center; padding: 20px;">No errors</div>';
+            }
+            
+            // Build skipped list
+            if (skipped.length > 0) {
+                skippedList.innerHTML = skipped.map(r => `
+                    <div style="margin-bottom: 10px; padding: 10px; background: #f8f9fa; border-left: 3px solid #6c757d; border-radius: 4px;">
+                        <div style="font-weight: bold; color: #6c757d; margin-bottom: 5px;">Row ${r.row}</div>
+                        <div style="color: #6c757d; font-size: 0.85rem; font-style: italic;">${escapeHtml(r.reason || 'Skipped')}</div>
+                    </div>
+                `).join('');
+            } else {
+                skippedList.innerHTML = '<div style="color: #666; text-align: center; padding: 20px;">No skipped items</div>';
+            }
+            
+            // Build success list
+            if (success.length > 0) {
+                successList.innerHTML = success.map(r => `
+                    <div style="margin-bottom: 10px; padding: 10px; background: #f0f9f4; border-left: 3px solid #28a745; border-radius: 4px;">
+                        <div style="font-weight: bold; color: #28a745; margin-bottom: 5px;">Row ${r.row}</div>
+                        <div style="color: #666; margin-bottom: 5px; font-size: 0.9rem;">${escapeHtml(r.prompt || 'No prompt')}</div>
+                        <div style="color: #28a745; font-size: 0.85rem;">✓ Query generated (${r.query_length || 0} chars)</div>
+                    </div>
+                `).join('');
+            } else {
+                successList.innerHTML = '<div style="color: #666; text-align: center; padding: 20px;">No successful items</div>';
+            }
+        }
+        
+        function toggleBatchSection(section) {
+            const content = document.getElementById(section + 'Content');
+            const chevron = document.getElementById(section + 'Chevron');
+            
+            if (content.style.display === 'none') {
+                content.style.display = 'block';
+                chevron.style.transform = 'rotate(180deg)';
+            } else {
+                content.style.display = 'none';
+                chevron.style.transform = 'rotate(0deg)';
+            }
+        }
+
+        function downloadBatchResults() {
+            if (!batchResultsData) {
+                showError('No results available to download');
+                return;
+            }
+
+            try {
+                // Decode base64 data
+                const binaryString = atob(batchResultsData.fileData);
+                const bytes = new Uint8Array(binaryString.length);
+                for (let i = 0; i < binaryString.length; i++) {
+                    bytes[i] = binaryString.charCodeAt(i);
+                }
+                
+                // Create blob and download
+                const blob = new Blob([bytes], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = batchResultsData.filename;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                window.URL.revokeObjectURL(url);
+                
+                showSuccess('Results file downloaded successfully!');
+            } catch (error) {
+                showError(`Failed to download: ${error.message}`);
+            }
+        }
 
     </script>
 </body>

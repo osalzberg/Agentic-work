@@ -671,6 +671,10 @@ def run_embeddings(texts: List[str], *, cfg: AzureOpenAIConfig | None = None, mo
             "Create a separate embedding deployment (e.g. text-embedding-3-small) and set AZURE_OPENAI_EMBED_DEPLOYMENT."
         )
 
+    # Check if embedding configuration is complete
+    if not cfg.embedding_endpoint or not embedding_deployment or not cfg.embedding_api_version:
+        return None, "Missing embedding configuration (AZURE_OPENAI_EMBEDDING_ENDPOINT, AZURE_OPENAI_EMBEDDING_DEPLOYMENT, or AZURE_OPENAI_EMBEDDING_API_VERSION)"
+    
     # Optional explicit embedding model override (Azure sometimes requires 'model' field for certain API versions)
     explicit_model = cfg.embedding_model or model
     embedding_api_version = cfg.embedding_api_version

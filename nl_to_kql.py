@@ -173,7 +173,10 @@ def load_domain_context(domain: str, nl_question: Optional[str] = None) -> Dict[
         "app_insights_capsule/kql_examples/app_requests_kql_examples.md",
         "app_insights_capsule/kql_examples/app_exceptions_kql_examples.md",
         "app_insights_capsule/kql_examples/app_traces_kql_examples.md",
+        "app_insights_capsule/kql_examples/app_dependencies_kql_examples.md",
         "app_insights_capsule/kql_examples/app_performance_kql_examples.md",
+        "app_insights_capsule/kql_examples/app_page_views_kql_examples.md",
+        "app_insights_capsule/kql_examples/app_custom_events_kql_examples.md",
     ]
     parsed_examples: List[Dict[str, str]] = []
     for path in example_files:
@@ -521,8 +524,10 @@ def _select_relevant_fewshots(nl_question: str, examples: List[Dict[str, str]]) 
         print(f"[fewshot-select] embedding_exception={embed_exc}")
         embeddings = None
     if (not embeddings or len(embeddings) != len(heuristic_records) + 1):
-        # no embeddings -> raise explicit error to caller for deterministic failure.
-        raise RuntimeError("Embeddings required but unavailable.")
+        # No embeddings available -> fall back to heuristic-only selection
+        print("[fewshot-select] embeddings_unavailable, using heuristic-only selection")
+        heuristic_records.sort(key=lambda x: x[0], reverse=True)
+        return [ex for _, ex in heuristic_records[:top_k]]
     
     hybrid_rows: List[Tuple[float, Dict[str, str]]] = []
 

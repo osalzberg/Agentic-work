@@ -4,7 +4,7 @@ Web Interface for Natural Language KQL Agent
 A Flask web application that provides a user-friendly interface for the KQL agent
 """
 
-from flask import Flask, render_template, request, jsonify, send_from_directory
+from flask import Flask, render_template, request, jsonify, send_from_directory, send_file
 import asyncio
 import time  # needed for docs enrichment timing budget
 import os
@@ -15,6 +15,8 @@ import threading
 import re
 from urllib import request as urlrequest
 from urllib.error import URLError, HTTPError
+import io
+from werkzeug.utils import secure_filename
 
 # Add the project root to Python path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -1641,6 +1643,77 @@ def discover_workspace_examples():
             'error': str(e)
         })
 
+@app.route('/api/examples/<scenario>', methods=['GET'])
+def get_examples_for_scenario(scenario):
+    """Get example queries for a specific scenario/table.
+    
+    Maps scenario names (like 'requests', 'exceptions') to table names
+    and returns suggestions from the example files.
+    """
+    try:
+        import os
+        
+        # Map scenario names to table names and example files
+        scenario_to_table_map = {
+            'requests': ('AppRequests', 'app_insights_capsule/kql_examples/app_requests_kql_examples.md'),
+            'exceptions': ('AppExceptions', 'app_insights_capsule/kql_examples/app_exceptions_kql_examples.md'),
+            'traces': ('AppTraces', 'app_insights_capsule/kql_examples/app_traces_kql_examples.md'),
+            'dependencies': ('AppDependencies', 'app_insights_capsule/kql_examples/app_dependencies_kql_examples.md'),
+            'page_views': ('AppPageViews', 'app_insights_capsule/kql_examples/app_page_views_kql_examples.md'),
+            'custom_events': ('AppCustomEvents', 'app_insights_capsule/kql_examples/app_custom_events_kql_examples.md'),
+            'performance': ('AppPerformanceCounters', 'app_insights_capsule/kql_examples/app_performance_kql_examples.md'),
+            'usage': ('Usage', 'usage_kql_examples.md'),
+        }
+        
+        if scenario not in scenario_to_table_map:
+            return jsonify({
+                'success': False,
+                'error': f'Unknown scenario: {scenario}'
+            })
+        
+        table_name, example_file = scenario_to_table_map[scenario]
+        
+        # Check if file exists
+        if not os.path.exists(example_file):
+            return jsonify({
+                'success': True,
+                'result': {
+                    'table': table_name,
+                    'suggestions': []
+                }
+            })
+        
+        # Parse example file for suggestions
+        suggestions = []
+        try:
+            with open(example_file, 'r', encoding='utf-8') as f:
+                content = f.read()
+                
+            # Extract headers (lines starting with #) as suggestions
+            for line in content.splitlines():
+                line = line.strip()
+                if line.startswith('# ') and not line.startswith('## '):
+                    # Remove markdown header syntax
+                    suggestion = line.lstrip('#').strip()
+                    if suggestion and len(suggestion) > 5:  # Filter out very short headers
+                        suggestions.append(suggestion)
+        except Exception as e:
+            print(f"[Examples] Error parsing {example_file}: {e}")
+        
+        return jsonify({
+            'success': True,
+            'result': {
+                'table': table_name,
+                'suggestions': suggestions[:10]  # Limit to 10 suggestions
+            }
+        })
+        
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        })
+
 @app.route('/api/example-catalog', methods=['POST'])
 def example_catalog():
     """Return unified example + (optional) live schema catalog.
@@ -1667,6 +1740,363 @@ def example_catalog():
 def static_files(filename):
     """Serve static files"""
     return send_from_directory('static', filename)
+
+@app.route('/api/query-execute', methods=['POST'])
+def query_execute():
+    """Execute a KQL query and return results."""
+    global agent
+    
+    try:
+        if not agent:
+            return jsonify({
+                'success': False, 
+                'error': 'Agent not initialized. Please setup workspace first.'
+            }), 400
+        
+        data = request.get_json()
+        query = data.get('query', '').strip()
+        
+        if not query:
+            return jsonify({'success': False, 'error': 'Query is required'}), 400
+        
+        # Execute the query using the agent's client
+        from azure.identity import DefaultAzureCredential
+        from azure.monitor.query import LogsQueryClient, LogsQueryStatus
+        from datetime import datetime, timedelta, timezone
+        
+        credential = DefaultAzureCredential()
+        client = LogsQueryClient(credential)
+        
+        # Execute with 24 hour timespan by default
+        end_time = datetime.now(timezone.utc)
+        start_time = end_time - timedelta(hours=24)
+        
+        response = client.query_workspace(
+            workspace_id=workspace_id,
+            query=query,
+            timespan=(start_time, end_time)
+        )
+        
+        if response.status == LogsQueryStatus.SUCCESS:
+            tables = []
+            for i, table in enumerate(response.tables):
+                columns = []
+                for col in getattr(table, 'columns', []):
+                    if hasattr(col, 'name'):
+                        columns.append(col.name)
+                    elif isinstance(col, dict) and 'name' in col:
+                        columns.append(col['name'])
+                    else:
+                        columns.append(str(col))
+                
+                processed_rows = []
+                raw_rows = getattr(table, 'rows', [])
+                
+                for row in raw_rows:
+                    processed_row = []
+                    for cell in row:
+                        if cell is None:
+                            processed_row.append(None)
+                        elif isinstance(cell, (str, int, float, bool)):
+                            processed_row.append(cell)
+                        else:
+                            processed_row.append(str(cell))
+                    processed_rows.append(processed_row)
+                
+                table_dict = {
+                    'name': getattr(table, 'name', f'table_{i}'),
+                    'columns': columns,
+                    'rows': processed_rows,
+                    'row_count': len(processed_rows)
+                }
+                tables.append(table_dict)
+            
+            return jsonify({'success': True, 'tables': tables})
+        else:
+            error_msg = getattr(response, 'partial_error', 'Query failed')
+            return jsonify({'success': False, 'error': str(error_msg)})
+            
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)})
+
+
+@app.route('/api/batch-test/parse', methods=['POST'])
+def batch_test_parse():
+    """Parse Excel file and return list of prompts."""
+    if 'file' not in request.files:
+        return jsonify({
+            'success': False,
+            'error': 'No file uploaded'
+        }), 400
+    
+    file = request.files['file']
+    
+    if file.filename == '':
+        return jsonify({
+            'success': False,
+            'error': 'No file selected'
+        }), 400
+    
+    if not file.filename.endswith(('.xlsx', '.xls')):
+        return jsonify({
+            'success': False,
+            'error': 'File must be .xlsx or .xls format'
+        }), 400
+    
+    try:
+        import pandas as pd
+        
+        # Read Excel file
+        df = pd.read_excel(file)
+        
+        # Validate columns
+        if 'Prompt' not in df.columns:
+            return jsonify({
+                'success': False,
+                'error': 'Excel file must have a "Prompt" column'
+            }), 400
+        
+        # Extract prompts
+        prompts = df['Prompt'].fillna('').astype(str).tolist()
+        
+        return jsonify({
+            'success': True,
+            'prompts': prompts
+        })
+        
+    except ImportError:
+        return jsonify({
+            'success': False,
+            'error': 'pandas or openpyxl not installed. Run: pip install pandas openpyxl'
+        }), 500
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': f'Error parsing file: {str(e)}'
+        }), 500
+
+
+@app.route('/api/batch-test/build', methods=['POST'])
+def batch_test_build():
+    """Build Excel file from results."""
+    try:
+        import pandas as pd
+        import base64
+        
+        data = request.json
+        filename = data.get('filename', 'results.xlsx')
+        results = data.get('results', [])
+        
+        if not results:
+            return jsonify({
+                'success': False,
+                'error': 'No results provided'
+            }), 400
+        
+        # Create DataFrame
+        rows = []
+        for r in results:
+            rows.append({
+                'Prompt': r.get('prompt', ''),
+                'Expected Query': '',  # User can fill this in manually
+                'Generated Query': r.get('query', ''),
+                'Reason': r.get('reason', ''),
+                'Query Output': r.get('output', '')
+            })
+        
+        df = pd.DataFrame(rows)
+        
+        # Save to BytesIO
+        output = io.BytesIO()
+        df.to_excel(output, index=False, engine='openpyxl')
+        output.seek(0)
+        
+        # Return base64 encoded data
+        encoded_file = base64.b64encode(output.getvalue()).decode('utf-8')
+        
+        return jsonify({
+            'success': True,
+            'file_data': encoded_file,
+            'filename': f"results_{secure_filename(filename)}"
+        })
+        
+    except ImportError:
+        return jsonify({
+            'success': False,
+            'error': 'pandas or openpyxl not installed. Run: pip install pandas openpyxl'
+        }), 500
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': f'Error building file: {str(e)}'
+        }), 500
+
+
+@app.route('/api/batch-test/upload', methods=['POST'])
+def batch_test_upload():
+    """Upload Excel file with prompts for batch testing"""
+    global agent, workspace_id
+    
+    if not agent or not workspace_id:
+        return jsonify({
+            'success': False,
+            'error': 'Agent not initialized. Please setup workspace first.'
+        }), 400
+    
+    if 'file' not in request.files:
+        return jsonify({
+            'success': False,
+            'error': 'No file provided'
+        }), 400
+    
+    file = request.files['file']
+    
+    if file.filename == '':
+        return jsonify({
+            'success': False,
+            'error': 'No file selected'
+        }), 400
+    
+    if not file.filename.endswith(('.xlsx', '.xls')):
+        return jsonify({
+            'success': False,
+            'error': 'File must be .xlsx or .xls format'
+        }), 400
+    
+    try:
+        import pandas as pd
+        
+        # Read Excel file
+        df = pd.read_excel(file)
+        
+        # Validate columns
+        required_cols = ['Prompt']
+        if 'Prompt' not in df.columns:
+            return jsonify({
+                'success': False,
+                'error': f'Excel file must have a "Prompt" column. Found columns: {", ".join(df.columns)}'
+            }), 400
+        
+        # Add output columns if they don't exist
+        if 'Generated Query' not in df.columns:
+            df['Generated Query'] = ''
+        if 'Reason' not in df.columns:
+            df['Reason'] = ''
+        
+        # Process each row
+        results = []
+        for idx, row in df.iterrows():
+            prompt = row['Prompt']
+            
+            # Skip empty prompts
+            if pd.isna(prompt) or not str(prompt).strip():
+                df.at[idx, 'Reason'] = 'Empty prompt (skipped)'
+                results.append({
+                    'row': idx + 1,
+                    'prompt': '',
+                    'status': 'skipped',
+                    'reason': 'Empty prompt'
+                })
+                continue
+            
+            prompt_str = str(prompt).strip()
+            
+            try:
+                # Translate natural language to KQL
+                result = asyncio.run(agent.process_natural_language(prompt_str))
+                
+                # Parse the result - it returns a formatted string, not a dict
+                if isinstance(result, str):
+                    # Check if result contains an error
+                    if result.startswith('❌') or 'error' in result.lower() or 'failed' in result.lower():
+                        error_msg = result.replace('❌', '').strip()
+                        df.at[idx, 'Generated Query'] = ''
+                        df.at[idx, 'Reason'] = f'Error: {error_msg}'
+                        results.append({
+                            'row': idx + 1,
+                            'prompt': prompt_str[:100],
+                            'status': 'error',
+                            'reason': error_msg
+                        })
+                    else:
+                        # Extract KQL from the result (it's formatted with headers)
+                        kql_query = result
+                        # Try to extract just the query part if it has formatting
+                        if '```kql' in result:
+                            parts = result.split('```kql')
+                            if len(parts) > 1:
+                                kql_query = parts[1].split('```')[0].strip()
+                        elif '📝 Generated KQL Query' in result:
+                            parts = result.split('📝 Generated KQL Query')
+                            if len(parts) > 1:
+                                kql_query = parts[1].strip()
+                        
+                        df.at[idx, 'Generated Query'] = kql_query
+                        df.at[idx, 'Reason'] = 'Successfully generated'
+                        results.append({
+                            'row': idx + 1,
+                            'prompt': prompt_str[:100],
+                            'status': 'success',
+                            'query_length': len(kql_query)
+                        })
+                else:
+                    df.at[idx, 'Generated Query'] = ''
+                    df.at[idx, 'Reason'] = 'Error: Unexpected result format'
+                    results.append({
+                        'row': idx + 1,
+                        'prompt': prompt_str[:100],
+                        'status': 'error',
+                        'reason': 'Unexpected result format'
+                    })
+                    
+            except Exception as e:
+                df.at[idx, 'Generated Query'] = ''
+                df.at[idx, 'Reason'] = f'Exception: {str(e)}'
+                results.append({
+                    'row': idx + 1,
+                    'prompt': prompt_str[:100],
+                    'status': 'error',
+                    'reason': str(e)
+                })
+        
+        # Save to BytesIO
+        output = io.BytesIO()
+        df.to_excel(output, index=False, engine='openpyxl')
+        output.seek(0)
+        
+        # Store in session or temp storage for download
+        # For simplicity, we'll return base64 encoded data
+        import base64
+        encoded_file = base64.b64encode(output.getvalue()).decode('utf-8')
+        
+        # Calculate summary
+        success_count = sum(1 for r in results if r['status'] == 'success')
+        error_count = sum(1 for r in results if r['status'] == 'error')
+        skipped_count = sum(1 for r in results if r['status'] == 'skipped')
+        
+        return jsonify({
+            'success': True,
+            'file_data': encoded_file,
+            'filename': f"results_{secure_filename(file.filename)}",
+            'summary': {
+                'total': len(df),
+                'success': success_count,
+                'errors': error_count,
+                'skipped': skipped_count
+            },
+            'results': results
+        })
+        
+    except ImportError:
+        return jsonify({
+            'success': False,
+            'error': 'pandas or openpyxl not installed. Run: pip install pandas openpyxl'
+        }), 500
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': f'Error processing file: {str(e)}'
+        }), 500
 
 if __name__ == '__main__':
     print("🌐 Starting Natural Language KQL Agent Web Interface...")

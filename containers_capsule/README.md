@@ -4,11 +4,14 @@ This capsule provides domain-specific prompt scaffolding, ontology, and reusable
 
 ## Contents
 - `container_ontology.md` - Concepts, entities, derived fields, sample queries.
-- `kql_functions_containerlogs.kql` - Reusable helper functions.
 - `prompt_guidelines.md` - Authoring guidance for NL intents.
-- `prompt_template_containerlogs.txt` - Base template injected before examples.
 - `diagram_container_ontology.mmd` - Mermaid diagram of entity relationships.
 - `kql_examples/container_logs_kql_examples.md` - Few-shot style NL→KQL examples (replaces deprecated `fewshots_containerlogs.txt`).
+
+**Deprecated files (preserved for reference only, not used by app):**
+- `kql_functions_containerlogs.kql.deprecated` - Contained hardcoded table names
+- `prompt_template_containerlogs.txt.deprecated` - Contained specific instructions
+- `domain_capsule_containerlogs.txt.deprecated` - Contained hardcoded table references
 
 ## Relocation Note
 Relocated from `docs/containers_capsule/` to top-level `containers_capsule/` for parity with `app_insights_capsule/` and future domain modularity.
