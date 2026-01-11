@@ -258,7 +258,10 @@ def detect_domain(nl_question: str) -> str:
         print("[domain-detect] chosen=appinsights (conflict; default to appinsights)")
         return "appinsights"
 
-    raise ValueError("Unable to classify domain. Include explicit indicators like 'pod', 'containerlogv2', 'request', or 'apprequests'.")
+    # No clear indicators found - default to appinsights for generic monitoring queries
+    # (operations, failures, errors, performance are typically Application Insights)
+    print("[domain-detect] no clear matches, defaulting to appinsights for generic monitoring queries")
+    return "appinsights"
 
 def _read_file(path: str, limit: int = 1600) -> str:
     if not os.path.exists(path):

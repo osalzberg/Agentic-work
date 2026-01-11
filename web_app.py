@@ -21,6 +21,16 @@ from werkzeug.utils import secure_filename
 # Add the project root to Python path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+# Import pandas and openpyxl for batch testing
+try:
+    import pandas as pd
+    import openpyxl
+    PANDAS_AVAILABLE = True
+except ImportError:
+    PANDAS_AVAILABLE = False
+    pd = None
+    openpyxl = None
+
 # Import the KQL agent
 from logs_agent import KQLAgent
 try:
@@ -1843,11 +1853,34 @@ def batch_test_parse():
             'error': 'File must be .xlsx or .xls format'
         }), 400
     
+    if not PANDAS_AVAILABLE:
+        return jsonify({
+            'success': False,
+            'error': 'pandas or openpyxl not installed. Run: pip install pandas openpyxl'
+        }), 500
+    
     try:
-        import pandas as pd
+        # Save file to BytesIO to avoid file pointer issues
+        file_content = io.BytesIO(file.read())
         
-        # Read Excel file
-        df = pd.read_excel(file)
+        # Try reading with appropriate engine based on extension
+        try:
+            if file.filename.endswith('.xlsx'):
+                df = pd.read_excel(file_content, engine='openpyxl')
+            else:
+                # For .xls files, try xlrd
+                df = pd.read_excel(file_content, engine='xlrd')
+        except Exception as e:
+            # If that fails, try the other engine as fallback
+            file_content.seek(0)
+            try:
+                if file.filename.endswith('.xlsx'):
+                    df = pd.read_excel(file_content, engine='xlrd')
+                else:
+                    df = pd.read_excel(file_content, engine='openpyxl')
+            except Exception:
+                # Re-raise original error
+                raise e
         
         # Validate columns
         if 'Prompt' not in df.columns:
@@ -1856,20 +1889,24 @@ def batch_test_parse():
                 'error': 'Excel file must have a "Prompt" column'
             }), 400
         
-        # Extract prompts
-        prompts = df['Prompt'].fillna('').astype(str).tolist()
+        # Extract prompts and strip whitespace
+        prompts = df['Prompt'].fillna('').astype(str).str.strip().tolist()
+        
+        # Also extract Expected Query column if it exists to preserve it
+        expected_queries = []
+        if 'Expected Query' in df.columns:
+            expected_queries = df['Expected Query'].fillna('').astype(str).tolist()
         
         return jsonify({
             'success': True,
-            'prompts': prompts
+            'prompts': prompts,
+            'expected_queries': expected_queries
         })
         
-    except ImportError:
-        return jsonify({
-            'success': False,
-            'error': 'pandas or openpyxl not installed. Run: pip install pandas openpyxl'
-        }), 500
     except Exception as e:
+        import traceback
+        error_details = traceback.format_exc()
+        print(f"[BatchParse] Error parsing Excel file: {error_details}")
         return jsonify({
             'success': False,
             'error': f'Error parsing file: {str(e)}'
@@ -1879,8 +1916,13 @@ def batch_test_parse():
 @app.route('/api/batch-test/build', methods=['POST'])
 def batch_test_build():
     """Build Excel file from results."""
+    if not PANDAS_AVAILABLE:
+        return jsonify({
+            'success': False,
+            'error': 'pandas or openpyxl not installed. Run: pip install pandas openpyxl'
+        }), 500
+    
     try:
-        import pandas as pd
         import base64
         
         data = request.json
@@ -1898,7 +1940,7 @@ def batch_test_build():
         for r in results:
             rows.append({
                 'Prompt': r.get('prompt', ''),
-                'Expected Query': '',  # User can fill this in manually
+                'Expected Query': r.get('expected_query', ''),  # Preserve from original
                 'Generated Query': r.get('query', ''),
                 'Reason': r.get('reason', ''),
                 'Query Output': r.get('output', '')
@@ -1920,11 +1962,6 @@ def batch_test_build():
             'filename': f"results_{secure_filename(filename)}"
         })
         
-    except ImportError:
-        return jsonify({
-            'success': False,
-            'error': 'pandas or openpyxl not installed. Run: pip install pandas openpyxl'
-        }), 500
     except Exception as e:
         return jsonify({
             'success': False,
@@ -1963,9 +2000,13 @@ def batch_test_upload():
             'error': 'File must be .xlsx or .xls format'
         }), 400
     
+    if not PANDAS_AVAILABLE:
+        return jsonify({
+            'success': False,
+            'error': 'pandas or openpyxl not installed. Run: pip install pandas openpyxl'
+        }), 500
+    
     try:
-        import pandas as pd
-        
         # Read Excel file
         df = pd.read_excel(file)
         
@@ -2087,11 +2128,6 @@ def batch_test_upload():
             'results': results
         })
         
-    except ImportError:
-        return jsonify({
-            'success': False,
-            'error': 'pandas or openpyxl not installed. Run: pip install pandas openpyxl'
-        }), 500
     except Exception as e:
         return jsonify({
             'success': False,

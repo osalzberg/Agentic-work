@@ -4537,6 +4537,7 @@ async function processQuestionWithRetry(question) {
                 }
 
                 const prompts = parseData.prompts;
+                const expectedQueries = parseData.expected_queries || [];
                 const totalRows = prompts.length;
                 const results = [];
                 
@@ -4545,6 +4546,7 @@ async function processQuestionWithRetry(question) {
                 // Process each prompt one by one
                 for (let i = 0; i < prompts.length; i++) {
                     const prompt = prompts[i];
+                    const expectedQuery = expectedQueries[i] || '';
                     const rowNum = i + 1;
                     const progressPercent = 10 + Math.floor((i / totalRows) * 85);
                     
@@ -4559,6 +4561,7 @@ async function processQuestionWithRetry(question) {
                         results.push({
                             row: rowNum,
                             prompt: '',
+                            expected_query: expectedQuery,
                             status: 'skipped',
                             reason: 'Empty prompt',
                             query: '',
@@ -4577,8 +4580,8 @@ async function processQuestionWithRetry(question) {
 
                         const queryData = await queryResponse.json();
 
-                        if (queryData.success && queryData.result && queryData.result.kql) {
-                            const kqlQuery = queryData.result.kql;
+                        if (queryData.success && queryData.result && queryData.result.kql_query) {
+                            const kqlQuery = queryData.result.kql_query;
                             let queryOutput = '';
                             
                             // Execute the query to get output
@@ -4593,7 +4596,25 @@ async function processQuestionWithRetry(question) {
                                 
                                 if (execData.success && execData.tables && execData.tables.length > 0) {
                                     const table = execData.tables[0];
-                                    queryOutput = `Rows: ${table.row_count}, Columns: ${table.columns.length}\nColumns: ${table.columns.join(', ')}`;
+                                    let output = `Rows: ${table.row_count}, Columns: ${table.columns.length}\n`;
+                                    output += `Columns: ${table.columns.join(', ')}\n\n`;
+                                    
+                                    // Show top 2 rows
+                                    const rowsToShow = Math.min(2, table.rows.length);
+                                    if (rowsToShow > 0) {
+                                        output += `Top ${rowsToShow} row(s):\n`;
+                                        for (let i = 0; i < rowsToShow; i++) {
+                                            const row = table.rows[i];
+                                            const rowData = table.columns.map((col, idx) => {
+                                                let val = row[idx];
+                                                if (val === null || val === undefined) val = 'null';
+                                                else if (typeof val === 'string' && val.length > 50) val = val.substring(0, 47) + '...';
+                                                return `${col}: ${val}`;
+                                            }).join(', ');
+                                            output += `${i + 1}. ${rowData}\n`;
+                                        }
+                                    }
+                                    queryOutput = output.trim();
                                 } else {
                                     queryOutput = execData.error || 'No results';
                                 }
@@ -4601,13 +4622,37 @@ async function processQuestionWithRetry(question) {
                                 queryOutput = `Execution error: ${execError.message}`;
                             }
                             
+                            // Get explanation for the results
+                            let explanation = '';
+                            try {
+                                const explainResponse = await fetch('/api/explain', {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({
+                                        query_result: queryData.result,
+                                        original_question: prompt
+                                    })
+                                });
+                                
+                                const explainData = await explainResponse.json();
+                                if (explainData.success && explainData.explanation) {
+                                    explanation = explainData.explanation;
+                                } else {
+                                    explanation = explainData.error || 'No explanation available';
+                                }
+                            } catch (explainError) {
+                                explanation = `Explanation error: ${explainError.message}`;
+                            }
+                            
                             updateLiveResult(rowNum, 'success', kqlQuery);
                             results.push({
                                 row: rowNum,
                                 prompt: prompt.substring(0, 100),
+                                expected_query: expectedQuery,
                                 status: 'success',
                                 query_length: kqlQuery.length,
                                 query: kqlQuery,
+                                reason: explanation,
                                 output: queryOutput
                             });
                         } else {
@@ -4616,6 +4661,7 @@ async function processQuestionWithRetry(question) {
                             results.push({
                                 row: rowNum,
                                 prompt: prompt.substring(0, 100),
+                                expected_query: expectedQuery,
                                 status: 'error',
                                 reason: error,
                                 query: '',
@@ -4627,6 +4673,7 @@ async function processQuestionWithRetry(question) {
                         results.push({
                             row: rowNum,
                             prompt: prompt.substring(0, 100),
+                            expected_query: expectedQuery,
                             status: 'error',
                             reason: error.message,
                             query: '',
@@ -4848,6 +4895,26 @@ async function processQuestionWithRetry(question) {
             } else {
                 content.style.display = 'none';
                 chevron.style.transform = 'rotate(0deg)';
+            }
+        }
+
+        function showSuccess(message) {
+            const resultContent = document.getElementById('resultContent');
+            const timestampElement = document.getElementById('timestamp');
+            const resultsSection = document.getElementById('resultsSection');
+            
+            if (resultContent && timestampElement && resultsSection) {
+                // Make sure the results section is visible
+                resultsSection.classList.add('visible');
+                resultsSection.style.display = 'block';
+                
+                resultContent.innerHTML = `<div class="success">✅ ${message}</div>`;
+                timestampElement.textContent = `Success at: ${new Date().toLocaleString()}`;
+                
+                // Auto-hide success message after 3 seconds
+                setTimeout(() => {
+                    resultsSection.classList.remove('visible');
+                }, 3000);
             }
         }
 
