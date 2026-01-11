@@ -1,0 +1,43 @@
+---
+config:
+  theme: neo
+  layout: fixed
+---
+flowchart TB
+ subgraph subGraph0["Examples & Index"]
+        DOMAIN_EXAMPLES["Domain query examples"]
+        AOAIEMBD["Azure OpenAI Embedding model"]
+        IDX["Embedding Index"]
+  end
+ subgraph subGraph1["Generate and run query"]
+        NL2Logs["NL2Logs"]
+        NL2KQL["NL2KQL"]
+        DETECT["Domain Detection"]
+        FEWSHOT["Few-shot Selector"]
+        PROMPT["Prompt Builder"]
+        QRYGEN["Query Generator"]
+        QEXEC["Query Executor"]
+  end
+ subgraph subGraph2["Explain"]
+        EXPLAIN["Explain logs"]
+        EX_PROMPT["Prompt Builder"]
+        PREP_DATA["Prepare data"]
+        ANALYZE["Analyze"]
+  end
+    DOMAIN_EXAMPLES --> AOAIEMBD
+    AOAIEMBD --> IDX
+    UserNLQ["User question (natural language)"] --> NL2Logs
+    NL2Logs --> NL2KQL & QEXEC
+    NL2KQL --> DETECT & FEWSHOT & PROMPT & QRYGEN
+    QRYGEN --> AOAI["Azure Open AI"]
+    FEWSHOT --> IDX
+    EXPLAIN --> EX_PROMPT & PREP_DATA & ANALYZE
+    ANALYZE --> AOAI
+    QEXEC --> LA["Log Analytics"]
+    UserNLQ@{ shape: text}
+     AOAIEMBD:::ext
+     UserNLQ:::Sky
+     AOAI:::ext
+     LA:::ext
+    classDef Sky stroke-width:1px, stroke-dasharray:none, stroke:#374D7C, fill:#E2EBFF, color:#374D7C
+    classDef ext fill:#f7f7ff, stroke:#4a6, stroke-width:1px

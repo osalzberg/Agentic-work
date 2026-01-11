@@ -1,0 +1,4348 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Natural Language KQL Agent</title>
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cdefs%3E%3ClinearGradient id='grad' x1='0%25' y1='0%25' x2='100%25' y2='100%25'%3E%3Cstop offset='0%25' style='stop-color:%23667eea;stop-opacity:1' /%3E%3Cstop offset='100%25' style='stop-color:%23764ba2;stop-opacity:1' /%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='100' height='100' rx='15' fill='url(%23grad)'/%3E%3Ctext x='50' y='35' font-family='Arial,sans-serif' font-size='24' font-weight='bold' text-anchor='middle' fill='white'%3EKQL%3C/text%3E%3Ctext x='50' y='65' font-family='Arial,sans-serif' font-size='36' text-anchor='middle' fill='white'%3E🤖%3C/text%3E%3C/svg%3E">
+    <link rel="shortcut icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cdefs%3E%3ClinearGradient id='grad' x1='0%25' y1='0%25' x2='100%25' y2='100%25'%3E%3Cstop offset='0%25' style='stop-color:%23667eea;stop-opacity:1' /%3E%3Cstop offset='100%25' style='stop-color:%23764ba2;stop-opacity:1' /%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='100' height='100' rx='15' fill='url(%23grad)'/%3E%3Ctext x='50' y='35' font-family='Arial,sans-serif' font-size='24' font-weight='bold' text-anchor='middle' fill='white'%3EKQL%3C/text%3E%3Ctext x='50' y='65' font-family='Arial,sans-serif' font-size='36' text-anchor='middle' fill='white'%3E🤖%3C/text%3E%3C/svg%3E">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 20px;
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
+            overflow: hidden;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+
+        .header h1 {
+            font-size: 2.5rem;
+            margin-bottom: 10px;
+            font-weight: 300;
+        }
+
+        .header p {
+            font-size: 1.1rem;
+            opacity: 0.9;
+        }
+
+        .main-content {
+            padding: 30px;
+        }
+
+        .setup-section {
+            background: #f8f9fa;
+            border-radius: 15px;
+            padding: 25px;
+            margin-bottom: 30px;
+            border-left: 5px solid #667eea;
+        }
+
+        .setup-section h2 {
+            color: #333;
+            margin-bottom: 15px;
+            font-weight: 500;
+        }
+
+        .input-group {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+            margin-bottom: 15px;
+        }
+
+        :root{ --control-height:44px; }
+        .input-group input {
+            flex: 1;
+            padding: 0 15px; /* vertical padding removed for precise centering */
+            border: 2px solid #e9ecef;
+            border-radius: 8px;
+            font-size: 1rem;
+            line-height: calc(var(--control-height) - 4px); /* height minus 2*border */
+            height: var(--control-height); /* Match workspace button explicit height */
+            box-sizing: border-box;
+            transition: border-color 0.3s ease;
+        }
+
+        .input-group input:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .btn {
+            padding: 12px 25px;
+            border: none;
+            border-radius: 8px;
+            font-size: 1rem;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            text-decoration: none;
+            display: inline-block;
+            text-align: center;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        }
+
+        .btn-secondary {
+            background: #6c757d;
+            color: white;
+        }
+
+        .btn-secondary:hover {
+            background: #5a6268;
+            transform: translateY(-2px);
+        }
+
+        .btn-success {
+            background: #28a745;
+            color: white;
+        }
+
+        .btn-success:hover {
+            background: #218838;
+            transform: translateY(-2px);
+        }
+
+        .status-indicator {
+            display: inline-block;
+            padding: 5px 10px;
+            border-radius: 20px;
+            font-size: 0.9rem;
+            font-weight: 500;
+            margin-left: 10px;
+        }
+
+        .status-connected {
+            background: #d4edda;
+            color: #155724;
+        }
+
+        .status-disconnected {
+            background: #f8d7da;
+            color: #721c24;
+        }
+
+        .query-section {
+            background: white;
+            border-radius: 15px;
+            padding: 25px;
+            margin-bottom: 30px;
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.05);
+        }
+
+        .query-section h2 {
+            color: #333;
+            margin-bottom: 20px;
+            font-weight: 500;
+        }        .question-container {
+            position: relative;
+            margin-bottom: 15px;
+        }
+
+        .question-input {
+            width: 100%;
+            padding: 15px 80px 15px 15px; /* Add right padding for button */
+            border: 2px solid #e9ecef;
+            border-radius: 10px;
+            font-size: 1.1rem;
+            resize: vertical;
+            min-height: 60px;
+            transition: border-color 0.3s ease;
+        }
+
+        .question-input:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .floating-go-btn {
+            position: absolute;
+            right: 8px;
+            top: 50%;
+            transform: translateY(-50%);
+            background: linear-gradient(135deg, #28a745 0%, #20c997 100%);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            padding: 10px 16px;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            box-shadow: 0 2px 8px rgba(40, 167, 69, 0.3);
+            min-width: 60px;
+        }
+
+        .floating-go-btn:disabled {
+            cursor: not-allowed;
+            transform: translateY(-50%);
+            box-shadow: 0 2px 8px rgba(108, 117, 125, 0.3);
+        }
+
+        .floating-go-btn:hover {
+            background: linear-gradient(135deg, #218838 0%, #1e7e34 100%);
+            transform: translateY(-50%) translateY(-2px);
+            box-shadow: 0 4px 12px rgba(40, 167, 69, 0.4);
+        }
+
+        .floating-go-btn:active {
+            transform: translateY(-50%) translateY(0px);
+        }
+
+        .button-spinner {
+            display: inline-block;
+            width: 12px;
+            height: 12px;
+            border: 2px solid rgba(255, 255, 255, 0.3);
+            border-top: 2px solid white;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin-right: 8px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .suggestions {
+            margin-bottom: 20px;
+        }
+
+        .suggestions h3 {
+            color: #555;
+            margin-bottom: 10px;
+            font-size: 1rem;
+            font-weight: 500;
+        }
+
+        .suggestion-pills {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px 12px; /* more breathing room */
+            align-items: flex-start;
+        }
+
+        .suggestion-pill {
+            background: #e9f4ff;
+            color: #0066cc;
+            padding: 6px 14px;
+            border-radius: 18px;
+            font-size: 0.85rem;
+            cursor: pointer;
+            transition: all 0.25s ease;
+            border: 1px solid #b3d9ff;
+            line-height: 1.2;
+            margin: 5px; /* added per request */
+        }
+
+        .suggestion-pill:hover {
+            background: #0066cc;
+            color: white;
+            transform: translateY(-1px);
+        }
+
+        .suggestion-pill.disabled {
+            background: #f3f3f3;
+            color: #999;
+            cursor: not-allowed;
+            opacity: 0.6;
+        }
+
+        .suggestion-pill.disabled:hover {
+            background: #f3f3f3;
+            color: #999;
+            transform: none;
+        }
+
+        .examples-section {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+        }
+
+        .example-btn {
+            padding: 8px 15px;
+            background: #f8f9fa;
+            border: 1px solid #dee2e6;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 0.9rem;
+            transition: all 0.3s ease;
+        }
+
+        .example-btn:hover {
+            background: #e9ecef;
+            transform: translateY(-1px);
+        }
+
+        /* "More Suggestions" now a link-like element */
+        .more-suggestions-link {
+            background: transparent;
+            color: #8057c7;
+            border: none;
+            padding: 4px 6px;
+            font-size: 0.85rem;
+            cursor: pointer;
+            font-weight: 600;
+            border-radius: 4px;
+            align-self: center;
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+        }
+        .more-suggestions-link:hover {
+            text-decoration: underline;
+            color: #5e33a9;
+            background: rgba(128,87,199,0.06);
+        }
+        .more-suggestions-link:active { color:#4b278d; }
+        
+        /* Disabled states for when workspace is not connected */
+        .more-suggestions-link:disabled,
+        .more-suggestions-link.disabled {
+            background: #f3f4f6 !important;
+            color: #9ca3af !important;
+            cursor: not-allowed !important;
+            opacity: 0.6;
+            pointer-events: none;
+        }
+        
+        .floating-go-btn.disabled {
+            background: linear-gradient(135deg, #9ca3af 0%, #6b7280 100%) !important;
+            color: #d1d5db !important;
+            cursor: not-allowed !important;
+            opacity: 0.6;
+            pointer-events: none;
+            box-shadow: 0 2px 8px rgba(156, 163, 175, 0.2) !important;
+        }
+        
+        .floating-go-btn.disabled:hover {
+            transform: none !important;
+            box-shadow: 0 2px 8px rgba(156, 163, 175, 0.2) !important;
+        }
+        
+        textarea:disabled,
+        textarea.disabled {
+            background-color: #f9fafb !important;
+            color: #9ca3af !important;
+            cursor: not-allowed !important;
+            opacity: 0.6;
+            border-color: #d1d5db !important;
+        }
+        
+        textarea:disabled::placeholder,
+        textarea.disabled::placeholder {
+            color: #9ca3af !important;
+        }
+
+        .results-section {
+            background: linear-gradient(135deg, #f8f9fa 0%, #ffffff 100%);
+            border-radius: 20px;
+            padding: 30px;
+            margin-top: 25px;
+            min-height: 120px;
+            display: none;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.06);
+            border: 1px solid #e9ecef;
+        }
+
+        .results-section.visible {
+            display: block;
+            animation: slideInFromTop 0.5s ease-out;
+        }
+
+        .results-section h3 {
+            color: #2c3e50;
+            margin-bottom: 20px;
+            font-weight: 600;
+            font-size: 1.4rem;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .result-content {
+            background: white;
+            padding: 25px;
+            border-radius: 12px;
+            border-left: 6px solid #667eea;
+            box-shadow: 0 4px 16px rgba(0, 0, 0, 0.05);
+            border: 1px solid #e9ecef;
+            white-space: pre-wrap;
+            font-family: 'Courier New', monospace;
+            font-size: 0.9rem;
+            line-height: 1.6;
+            max-height: 400px;
+            overflow-y: auto;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: #666;
+        }
+
+        .spinner {
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #667eea;
+            border-radius: 50%;
+            width: 30px;
+            height: 30px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 15px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .loading-steps {
+            text-align: left;
+            max-width: 400px;
+            margin: 0 auto;
+        }
+
+        .current-step {
+            font-size: 1.1rem;
+            font-weight: 600;
+            color: #667eea;
+            margin-bottom: 20px;
+            text-align: center;
+        }
+
+        .progress-steps {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .step {
+            padding: 8px 12px;
+            border-radius: 6px;
+            background: #f8f9fa;
+            color: #6c757d;
+            font-size: 0.9rem;
+            transition: all 0.3s ease;
+            border-left: 3px solid #dee2e6;
+        }
+
+        .step.active {
+            background: #e8f4fd;
+            color: #0066cc;
+            border-left-color: #667eea;
+            transform: translateX(5px);
+        }
+
+        .step.completed {
+            background: #d4edda;
+            color: #155724;
+            border-left-color: #28a745;
+        }
+
+        .step.retry {
+            background: #fff3cd;
+            color: #856404;
+            border-left-color: #ffc107;
+            animation: pulse 1.5s infinite;
+        }
+
+        @keyframes pulse {
+            0% { opacity: 1; }
+            50% { opacity: 0.7; }
+            100% { opacity: 1; }
+        }
+
+        .error {
+            background: #f8d7da;
+            color: #721c24;
+            padding: 15px;
+            border-radius: 8px;
+            border-left: 4px solid #dc3545;
+            margin-top: 15px;
+        }
+
+        .success {
+            background: #d4edda;
+            color: #155724;
+            padding: 15px;
+            border-radius: 8px;
+            border-left: 4px solid #28a745;
+            margin-top: 15px;
+        }
+
+        .timestamp {
+            font-size: 0.85rem;
+            color: #6c757d;
+            margin-top: 15px;
+            text-align: right;
+            padding: 8px 15px;
+            background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+            border-radius: 8px;
+            border-left: 3px solid #667eea;
+            font-style: italic;
+        }
+
+        .progress-container {
+            margin: 15px 0;
+            background: #f8f9fa;
+            border-radius: 10px;
+            overflow: hidden;
+            height: 6px;
+        }
+
+        .progress-bar {
+            height: 100%;
+            background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+            width: 0%;
+            transition: width 0.5s ease;
+            border-radius: 10px;
+        }
+
+        .timing-info {
+            display: flex;
+            justify-content: space-between;
+            margin-top: 10px;
+            font-size: 0.8rem;
+            color: #666;
+        }
+
+        .loading-stats {
+            text-align: center;
+            margin-top: 15px;
+            font-size: 0.9rem;
+            color: #555;
+        }
+
+        /* Table styling for query results */
+        .result-table {
+            width: 100%;
+            min-width: max-content;
+            border-collapse: separate;
+            border-spacing: 0;
+            margin: 20px 0;
+            background: white;
+            border-radius: 12px;
+            overflow: hidden;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+            border: 1px solid #e9ecef;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        }
+
+        .result-table th {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 16px 20px;
+            text-align: left;
+            font-weight: 600;
+            font-size: 0.95rem;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            border: none;
+            position: sticky;
+            top: 0;
+            z-index: 10;
+            white-space: nowrap;
+            min-width: 120px;
+        }
+
+        .result-table td {
+            padding: 14px 20px;
+            border-bottom: 1px solid #f1f3f4;
+            font-size: 0.9rem;
+            line-height: 1.5;
+            color: #2c3e50;
+            vertical-align: top;
+            white-space: nowrap;
+            min-width: 120px;
+        }
+
+        .result-table tr:hover {
+            background: linear-gradient(135deg, #f8f9ff 0%, #ffffff 100%);
+            transform: scale(1.001);
+            transition: all 0.2s ease;
+        }
+
+        .result-table tr:last-child td {
+            border-bottom: none;
+        }
+
+        .table-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin: 25px 0 15px 0;
+            padding: 15px 20px;
+            background: linear-gradient(135deg, #f8f9fa 0%, #ffffff 100%);
+            border-radius: 10px;
+            border: 1px solid #e9ecef;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+        }
+
+        .table-title {
+            font-size: 1.2rem;
+            font-weight: 600;
+            color: #2c3e50;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .table-info {
+            font-size: 0.9rem;
+            color: #667eea;
+            background: linear-gradient(135deg, #e3f2fd 0%, #f8f9fa 100%);
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-weight: 500;
+            border: 1px solid #bbdefb;
+            border-radius: 4px;
+        }
+
+        .kql-query {
+            background: linear-gradient(135deg, #2d3748 0%, #4a5568 100%);
+            border: 1px solid #e2e8f0;
+            border-radius: 12px;
+            padding: 20px;
+            margin: 20px 0;
+            font-family: 'SF Mono', 'Monaco', 'Inconsolata', 'Roboto Mono', 'Courier New', monospace;
+            font-size: 0.9rem;
+            color: #e2e8f0;
+            white-space: pre-wrap;
+            line-height: 1.6;
+            box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
+            position: relative;
+            overflow-x: auto;
+        }
+
+        .kql-query::before {
+            content: 'KQL';
+            position: absolute;
+            top: 8px;
+            right: 12px;
+            background: rgba(102, 126, 234, 0.8);
+            color: white;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 0.7rem;
+            font-weight: 600;
+            letter-spacing: 0.5px;
+        }
+
+        .query-header {
+            font-size: 1.1rem;
+            font-weight: 600;
+            color: #667eea;
+            margin-bottom: 10px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 10px 0;
+        }
+
+        .no-data-message {
+            text-align: center;
+            padding: 50px;
+            color: #6c757d;
+            font-style: italic;
+            font-size: 1.1rem;
+            background: linear-gradient(135deg, #f8f9fa 0%, #ffffff 100%);
+            border: 2px dashed #dee2e6;
+            border-radius: 12px;
+            margin: 20px 0;
+        }
+
+        .result-container {
+            max-height: 600px;
+            overflow: auto;
+            overflow-x: auto;
+            border-radius: 12px;
+            margin: 20px 0;
+            background: white;
+            box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
+            border: 1px solid #e9ecef;
+            scrollbar-width: thin;
+            scrollbar-color: #667eea #f1f1f1;
+            position: relative;
+            transition: max-height 0.3s ease;
+        }
+
+        /* Add a subtle gradient hint for horizontal scrolling */
+        .result-container::after {
+            content: '';
+            position: absolute;
+            top: 0;
+            right: 0;
+            bottom: 0;
+            width: 20px;
+            background: linear-gradient(to left, rgba(255,255,255,0.9), rgba(255,255,255,0));
+            pointer-events: none;
+            z-index: 5;
+            opacity: 0;
+            transition: opacity 0.3s ease;
+        }
+
+        .result-container:hover::after {
+            opacity: 1;
+        }
+
+        .result-container.expanded {
+            max-height: 90vh;
+        }
+
+        .expand-toggle {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 6px;
+            padding: 6px 12px;
+            font-size: 0.8rem;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .expand-toggle:hover {
+            background: linear-gradient(135deg, #5a6fd8 0%, #654892 100%);
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
+        }
+
+        .result-container::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+
+        .result-container::-webkit-scrollbar-track {
+            background: #f1f1f1;
+            border-radius: 4px;
+        }
+
+        .result-container::-webkit-scrollbar-thumb {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border-radius: 4px;
+        }
+
+        .result-container::-webkit-scrollbar-thumb:hover {
+            background: linear-gradient(135deg, #5a6fd8 0%, #654892 100%);
+        }
+
+        /* Enhanced responsive design for tables */
+        @media (max-width: 768px) {
+            .result-table {
+                font-size: 0.8rem;
+            }
+            
+            .result-table th,
+            .result-table td {
+                padding: 8px 10px;
+            }
+            
+            .table-header {
+                flex-direction: column;
+                align-items: flex-start;
+                gap: 5px;
+            }
+            
+            .result-container {
+                overflow-x: auto;
+            }
+        }
+
+        /* Enhanced table features */
+        .result-table tbody tr:nth-child(odd) {
+            background-color: #f8f9fa;
+        }
+
+        .result-table tbody tr:nth-child(even) {
+            background-color: white;
+        }
+
+        .cell-number {
+            text-align: right;
+            font-family: 'SF Mono', 'Monaco', 'Roboto Mono', 'Courier New', monospace;
+            font-weight: 500;
+            color: #2563eb;
+            background: linear-gradient(135deg, #f0f7ff 0%, #ffffff 100%);
+            padding: 8px 12px !important;
+            border-radius: 4px;
+        }
+
+        .cell-boolean {
+            text-align: center;
+            font-weight: 700;
+            padding: 6px 12px !important;
+            border-radius: 4px;
+            text-transform: uppercase;
+            font-size: 0.8rem;
+            letter-spacing: 0.5px;
+        }
+
+        .cell-boolean.true {
+            color: white;
+            background: linear-gradient(135deg, #28a745 0%, #20c997 100%);
+        }
+
+        .cell-boolean.false {
+            color: white;
+            background: linear-gradient(135deg, #dc3545 0%, #e74c3c 100%);
+        }
+
+        .cell-null {
+            color: #6c757d;
+            font-style: italic;
+            background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+            padding: 8px 12px !important;
+            border-radius: 4px;
+            text-align: center;
+        }
+
+        .table-stats {
+            margin-top: 15px;
+            padding: 12px 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border-radius: 8px;
+            font-size: 0.9rem;
+            font-weight: 500;
+            text-align: center;
+            box-shadow: 0 2px 8px rgba(102, 126, 234, 0.2);
+        }
+
+        /* Explain button styling */
+        .explain-section {
+            margin-top: 15px;
+            padding: 15px;
+            background: #f8f9fa;
+            border-radius: 8px;
+            border-left: 4px solid #667eea;
+        }
+
+        .btn-explain {
+            background: linear-gradient(135deg, #28a745 0%, #20c997 100%);
+            color: white;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 6px;
+            font-size: 0.9rem;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .btn-explain:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(40, 167, 69, 0.3);
+        }
+
+        .btn-explain:disabled {
+            background: #6c757d;
+            cursor: not-allowed;
+            transform: none;
+            box-shadow: none;
+        }
+
+        .explain-loading {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            color: #666;
+            font-size: 0.9rem;
+        }
+
+        .explain-spinner {
+            width: 16px;
+            height: 16px;
+            border: 2px solid #f3f3f3;
+            border-top: 2px solid #667eea;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+
+        .explain-result {
+            margin-top: 15px;
+            padding: 15px;
+            background: white;
+            border-radius: 6px;
+            border-left: 4px solid #28a745;
+            font-size: 0.95rem;
+            line-height: 1.6;
+        }
+
+        .explain-result h4 {
+            margin: 0 0 10px 0;
+            color: #28a745;
+            font-size: 1rem;
+        }
+
+        @media (max-width: 768px) {
+            .container {
+                margin: 10px;
+                border-radius: 15px;
+            }
+
+            .header h1 {
+                font-size: 2rem;
+            }
+
+            .main-content {
+                padding: 20px;
+            }            .input-group {
+                flex-direction: column;
+            }
+
+            .suggestion-pills,
+            .examples-section {
+                flex-direction: column;
+            }
+
+            .question-input {
+                padding: 12px 70px 12px 12px; /* Adjust padding for smaller screens */
+                font-size: 1rem;
+            }
+
+            .floating-go-btn {
+                padding: 8px 12px;
+                font-size: 0.9rem;
+                min-width: 50px;
+            }
+        }        /* Example suggestions styling */
+        .example-suggestions {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            margin: 15px 0;
+        }
+
+        .example-suggestion {
+            background: #f8f9fa;
+            color: #333;
+            padding: 12px 15px;
+            border-radius: 8px;
+            font-size: 0.95rem;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            border: 1px solid #dee2e6;
+            text-align: left;
+            font-weight: 500;
+        }        .example-suggestion:hover {
+            background: #667eea;
+            color: white;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
+        }
+
+        /* Table-specific examples list */
+        .table-examples-list {
+            margin-top: 10px;
+            padding-top: 10px;
+            border-top: 1px solid #e0e0e0;
+            transition: opacity 0.3s ease-in-out;
+        }
+
+        .table-examples-list .example-suggestion {
+            font-size: 0.85rem;
+            padding: 8px 12px;
+            margin-bottom: 5px;
+        }
+
+        /* Dedicated example suggestions section */
+        .example-suggestions-section {
+            background: white;
+            border-radius: 15px;
+            padding: 25px;
+            margin-bottom: 30px;
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.05);
+            border-left: 4px solid #667eea;
+        }
+
+        /* Explain Results Section */
+        .explain-results-section {
+            background: white;
+            border-radius: 15px;
+            padding: 25px;
+            margin-top: 20px;
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.05);
+            border-left: 4px solid #28a745;
+        }        /* Workspace Discovery Results Styling */
+        .workspace-discovery-results {
+            max-width: 100%;
+            overflow-x: auto;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+        
+        .workspace-summary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 25px;
+            border-radius: 12px;
+            margin-bottom: 25px;
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.2);
+        }
+        
+        .workspace-summary h4 {
+            margin-bottom: 20px;
+            font-size: 1.4rem;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .summary-stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+            gap: 20px;
+        }
+        
+        .stat-item {
+            background: rgba(255, 255, 255, 0.15);
+            padding: 15px;
+            border-radius: 8px;
+            text-align: center;
+            transition: transform 0.2s ease;
+        }
+        
+        .stat-item:hover {
+            transform: translateY(-2px);
+            background: rgba(255, 255, 255, 0.2);
+        }
+        
+        .stat-label {
+            display: block;
+            font-size: 0.9rem;
+            opacity: 0.9;
+            margin-bottom: 8px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        
+        .stat-value {
+            display: block;
+            font-size: 1.8rem;
+            font-weight: bold;
+            margin-top: 5px;
+        }
+        
+        .example-categories {
+            margin-bottom: 30px;
+        }
+        
+        .example-categories h4 {
+            color: #333;
+            margin-bottom: 20px;
+            font-size: 1.2rem;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .category-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+            gap: 15px;
+        }
+        
+        .category-card {
+            background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+            border: 1px solid #dee2e6;
+            padding: 20px;
+            border-radius: 10px;
+            text-align: center;
+            transition: all 0.3s ease;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+        }
+        
+        .category-card:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 6px 20px rgba(0,0,0,0.1);
+            border-color: #667eea;
+        }
+        
+        .category-name {
+            font-weight: 600;
+            color: #495057;
+            margin-bottom: 8px;
+            font-size: 1rem;
+        }
+        
+        .category-count {
+            color: #667eea;
+            font-size: 1.1rem;
+            font-weight: 500;
+        }
+        
+        .tables-with-examples {
+            margin-bottom: 20px;
+        }
+        
+        .tables-with-examples h4 {
+            color: #333;
+            margin-bottom: 25px;
+            font-size: 1.2rem;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            border-bottom: 2px solid #e9ecef;
+            padding-bottom: 10px;
+        }
+        
+        .tables-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+            gap: 25px;
+            margin-top: 20px;
+        }
+          .table-card {
+            background: white;
+            border: 1px solid #dee2e6;
+            border-radius: 10px;
+            padding: 15px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }        .table-header {
+            display: flex;
+            flex-direction: column;
+            align-items: flex-start;
+            margin-bottom: 10px;
+            padding-bottom: 8px;
+            border-bottom: 1px solid #eee;
+        }
+        
+        .table-header h5 {
+            color: #333;
+            margin: 0 0 8px 0;
+            font-size: 1.1rem;
+        }
+        
+        .table-description {
+            color: #666;
+            font-size: 0.9rem;
+            line-height: 1.4;
+            margin: 0;
+        }
+        
+        .record-count {
+            background: linear-gradient(135deg, #e9ecef 0%, #f8f9fa 100%);
+            padding: 6px 12px;
+            border-radius: 20px;
+            font-size: 0.8rem;
+            color: #495057;
+        }        .table-examples {
+            margin-bottom: 0;
+            padding: 10px;
+            background: #f8f9fa;
+            border-radius: 5px;
+        }
+        
+        .example-item {
+            background: linear-gradient(135deg, #f8f9fa 0%, #ffffff 100%);
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 10px;
+            border: 1px solid #e9ecef;
+            transition: all 0.2s ease;
+        }
+        
+        .example-item:hover {
+            background: linear-gradient(135deg, #e3f2fd 0%, #f8f9fa 100%);
+            border-color: #667eea;
+            transform: translateX(3px);
+        }
+
+        .example-item.disabled {
+            background: #f3f3f3;
+            color: #999;
+            cursor: not-allowed;
+            opacity: 0.6;
+            border-color: #ddd;
+        }
+
+        .example-item.disabled:hover {
+            background: #f3f3f3;
+            border-color: #ddd;
+            transform: none;
+        }
+        
+        .example-source {
+            font-weight: 600;
+            color: #495057;
+            font-size: 0.9rem;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        
+        .example-source::before {
+            content: '📋';
+            font-size: 0.8rem;
+        }
+        
+        .example-description {
+            color: #6c757d;
+            font-size: 0.85rem;
+            margin-top: 6px;
+            line-height: 1.4;
+        }
+        
+        .query-count {
+            color: #667eea;
+            font-size: 0.8rem;
+            margin-top: 6px;
+            font-weight: 500;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+        
+        .query-count::before {
+            content: '🔍';
+            font-size: 0.7rem;
+        }        .table-actions {
+            display: flex;
+            gap: 10px;
+            margin: 0;
+        }
+
+        /* Examples chevron styling */        .examples-chevron {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 1rem;
+            color: #333;
+            cursor: pointer;
+            transition: color 0.3s ease;
+            user-select: none;
+            font-weight: 600;
+        }
+
+        .examples-chevron:hover {
+            color: #667eea;
+        }
+
+        .examples-chevron .chevron-icon {
+            font-size: 0.8rem;
+            transition: transform 0.3s ease;
+            font-weight: bold;
+        }
+
+        .examples-chevron.expanded .chevron-icon {
+            transform: rotate(90deg);
+        }
+
+        .examples-chevron .chevron-text {
+            font-weight: 500;
+        }
+        
+        .btn-small {
+            padding: 10px 16px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 0.85rem;
+            font-weight: 500;
+            transition: all 0.3s ease;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            min-width: 120px;
+            justify-content: center;
+        }
+        
+        .btn-small:hover {
+            background: linear-gradient(135deg, #5a6fd8 0%, #654892 100%);
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
+        }
+        
+        .btn-small:active {
+            transform: translateY(0);
+        }
+        
+        .quick-actions {
+            margin-top: 30px;
+            padding: 25px;
+            background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+            border-radius: 12px;
+            border: 1px solid #dee2e6;
+        }
+        
+        .quick-actions h4 {
+            color: #333;
+            margin-bottom: 20px;
+            font-size: 1.1rem;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .action-buttons {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 15px;
+        }
+        
+        .action-btn {
+            padding: 14px 20px;
+            background: linear-gradient(135deg, #28a745 0%, #20c997 100%);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 0.9rem;
+            font-weight: 500;
+            transition: all 0.3s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            text-align: center;
+        }
+        
+        .action-btn:hover {
+            background: linear-gradient(135deg, #218838 0%, #1e7e34 100%);
+            transform: translateY(-2px);
+            box-shadow: 0 6px 16px rgba(40, 167, 69, 0.3);
+        }
+        
+        .action-btn:active {
+            transform: translateY(0);
+        }
+        
+        /* Responsive improvements */
+        @media (max-width: 768px) {
+            .workspace-discovery-results {
+                padding: 10px;
+            }
+            
+            .tables-grid {
+                grid-template-columns: 1fr;
+                gap: 20px;
+            }
+            
+            .summary-stats {
+                grid-template-columns: 1fr;
+                gap: 15px;
+            }
+            
+            .category-grid {
+                grid-template-columns: 1fr;
+            }
+            
+            .action-buttons {
+                grid-template-columns: 1fr;
+            }
+            
+            .table-actions {
+                flex-direction: column;
+            }
+            
+            .btn-small {
+                min-width: 100%;
+            }
+        }        /* Tooltip styles */
+        .tooltip {
+            position: relative;
+            display: inline-block;
+        }
+
+        .tooltip .tooltiptext {
+            visibility: hidden;
+            width: 200px;
+            background-color: #333;
+            color: #fff;
+            text-align: center;
+            border-radius: 6px;
+            padding: 8px;
+            position: absolute;
+            z-index: 1000;
+            bottom: 125%;
+            left: 50%;
+            margin-left: -100px;
+            opacity: 0;
+            transition: opacity 0.3s;
+            font-size: 0.8rem;
+            line-height: 1.3;
+        }
+
+        .tooltip .tooltiptext::after {
+            content: "";
+            position: absolute;
+            top: 100%;
+            left: 50%;
+            margin-left: -5px;
+            border-width: 5px;
+            border-style: solid;
+            border-color: #333 transparent transparent transparent;
+        }
+
+        .tooltip:hover .tooltiptext {
+            visibility: visible;
+            opacity: 1;
+        }
+
+        /* Enhanced workspace examples styles */
+        @keyframes slideInFromTop {
+            0% {
+                transform: translateY(-20px);
+                opacity: 0;
+            }
+            100% {
+                transform: translateY(0);
+                opacity: 1;
+            }
+        }
+
+        .workspace-discovery-results {
+            animation: slideInFromTop 0.6s ease-out;
+        }
+
+        .table-card {
+            animation: slideInFromTop 0.8s ease-out;
+        }
+
+        /* Success notification */
+        .success-notification {
+            background: linear-gradient(135deg, #28a745 0%, #20c997 100%);
+            color: white;
+            padding: 12px 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            box-shadow: 0 4px 12px rgba(40, 167, 69, 0.2);
+            animation: slideInFromTop 0.5s ease-out;
+        }
+    /* Enhanced Schema Tree Styles */
+    .schema-controls { 
+        margin-top: 20px; 
+        display: flex; 
+        gap: 15px; 
+        flex-wrap: wrap; 
+        align-items: center;
+        background: linear-gradient(135deg, #f8f9fb 0%, #e9ecef 100%);
+        padding: 15px 20px;
+        border-radius: 12px;
+        border: 1px solid #e0e6ed;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+    }
+    
+    .schema-primary-btn { 
+        display: inline-flex; 
+        align-items: center; 
+        gap: 10px; 
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); 
+        color: #fff; 
+        border: none; 
+        padding: 12px 20px; 
+        border-radius: 8px; 
+        font-weight: 600; 
+        font-size: 0.9rem; 
+        box-shadow: 0 4px 15px rgba(102, 126, 234, 0.3); 
+        cursor: pointer; 
+        height: 44px;
+        transition: all 0.3s ease;
+        position: relative;
+        overflow: hidden;
+    }
+    
+    .schema-primary-btn:before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: -100%;
+        width: 100%;
+        height: 100%;
+        background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent);
+        transition: left 0.5s;
+    }
+    
+    .schema-primary-btn:hover {
+        background: linear-gradient(135deg, #5a6fd8 0%, #6a4190 100%);
+        box-shadow: 0 6px 20px rgba(102, 126, 234, 0.4);
+        transform: translateY(-2px);
+    }
+    
+    .schema-primary-btn:hover:before {
+        left: 100%;
+    }
+    
+    .schema-primary-btn:active { 
+        background: linear-gradient(135deg, #4e5bc6 0%, #5e377e 100%); 
+        transform: translateY(0px);
+    }
+    
+    .schema-primary-btn:disabled,
+    .schema-primary-btn.disabled {
+        background: linear-gradient(135deg, #9ca3af 0%, #6b7280 100%);
+        color: #d1d5db;
+        cursor: not-allowed;
+        box-shadow: 0 2px 8px rgba(156, 163, 175, 0.2);
+        transform: none;
+        opacity: 0.6;
+    }
+    
+    .schema-primary-btn:disabled:hover,
+    .schema-primary-btn.disabled:hover {
+        background: linear-gradient(135deg, #9ca3af 0%, #6b7280 100%);
+        transform: none;
+        box-shadow: 0 2px 8px rgba(156, 163, 175, 0.2);
+    }
+    
+    .schema-primary-btn:disabled:before,
+    .schema-primary-btn.disabled:before {
+        display: none;
+    }
+    
+    .schema-primary-btn .icon { 
+        width: 18px; 
+        height: 18px; 
+        display: inline-block; 
+        border: 2px solid currentColor; 
+        border-left-color: transparent; 
+        border-bottom-color: transparent; 
+        transform: rotate(45deg); 
+        border-radius: 3px; 
+        transition: transform 0.3s ease;
+    }
+    
+    .schema-primary-btn[aria-expanded="true"] .icon { 
+        transform: rotate(225deg); 
+    }
+
+    :root { --schema-max-height: clamp(300px, 55vh, 520px); }
+    .schema-tree-container { 
+        margin-top: 20px; 
+        background: #ffffff; 
+        border: 1px solid #e0e6ed; 
+        border-radius: 12px; 
+        padding: 0; 
+        max-height: var(--schema-max-height); /* responsive capped height */
+        overflow-y: auto; /* enable vertical scroll */
+        overflow-x: hidden; /* hide horizontal overflow */
+        font-family: 'Segoe UI', Tahoma, sans-serif; 
+        display: none;
+        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+        backdrop-filter: blur(10px);
+        scrollbar-width: thin; /* Firefox */
+        scrollbar-color: #667eea #f1f3f4; /* Firefox */
+        position: relative; /* establish containing block */
+    }
+    .schema-tree-container::-webkit-scrollbar { width: 8px; }
+    .schema-tree-container::-webkit-scrollbar-track { background: #f1f3f4; border-radius: 4px; }
+    .schema-tree-container::-webkit-scrollbar-thumb { background: linear-gradient(135deg, #667eea, #764ba2); border-radius: 4px; }
+    .schema-tree-container::-webkit-scrollbar-thumb:hover { background: linear-gradient(135deg, #5a6fd8, #6a4190); }
+    
+    .schema-tree-search {
+        background: linear-gradient(135deg, #f8f9fb 0%, #e9ecef 100%);
+        padding: 20px;
+        border-bottom: 1px solid #e0e6ed;
+        border-radius: 12px 12px 0 0;
+    }
+    
+    .schema-tree { 
+        list-style: none; 
+        padding: 20px; 
+        margin: 0;
+        font-size: 0.9rem; 
+        /* Removed max-height & overflow to let parent container control scrolling */
+        box-sizing: border-box;
+    }
+    
+    .schema-tree::-webkit-scrollbar {
+        width: 8px;
+    }
+    
+    .schema-tree::-webkit-scrollbar-track {
+        background: #f1f3f4;
+        border-radius: 4px;
+    }
+    
+    .schema-tree::-webkit-scrollbar-thumb {
+        background: linear-gradient(135deg, #667eea, #764ba2);
+        border-radius: 4px;
+    }
+    
+    .schema-tree li { 
+        margin: 8px 0; 
+        line-height: 1.5; 
+    }
+    
+    .schema-group { 
+        margin: 20px 0;
+        padding: 16px;
+        background: linear-gradient(135deg, #f8f9fb 0%, #ffffff 100%);
+        border-radius: 10px;
+        border: 1px solid #e8ecf0;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+    }
+    
+    .schema-group-title { 
+        font-weight: 700; 
+        font-size: 1.1rem;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); 
+        -webkit-background-clip: text; 
+        background-clip: text; 
+        color: transparent; 
+        cursor: pointer; 
+        user-select: none; 
+        display: flex; 
+        align-items: center; 
+        gap: 10px;
+        padding: 8px 0;
+        border-bottom: 2px solid #f0f0f0;
+        margin-bottom: 12px;
+        transition: all 0.3s ease;
+    }
+    
+    .schema-group-title:hover {
+        transform: translateX(5px);
+    }
+    
+    .schema-resource-type { 
+        cursor: pointer; 
+        padding: 10px 12px; 
+        border-radius: 8px; 
+        transition: all 0.3s ease; 
+        display: flex; 
+        align-items: center; 
+        gap: 8px;
+        margin: 4px 0;
+        background: #ffffff;
+        border: 1px solid #e8ecf0;
+        position: relative;
+        overflow: hidden;
+    }
+    
+    .schema-resource-type:before {
+        content: '';
+        position: absolute;
+        left: 0;
+        top: 0;
+        height: 100%;
+        width: 4px;
+        background: linear-gradient(135deg, #667eea, #764ba2);
+        transform: scaleY(0);
+        transition: transform 0.3s ease;
+    }
+    
+    .schema-resource-type:hover { 
+        background: linear-gradient(135deg, #f1f4fb 0%, #e8f0fe 100%);
+        border-color: #667eea;
+        transform: translateX(8px);
+        box-shadow: 0 4px 15px rgba(102, 126, 234, 0.15);
+    }
+    
+    .schema-resource-type:hover:before {
+        transform: scaleY(1);
+    }
+    
+    .schema-table-list { 
+        margin-left: 24px; 
+        margin-top: 12px;
+        padding: 12px;
+        background: linear-gradient(135deg, #fafbfc 0%, #f5f7fa 100%);
+        border-radius: 8px;
+        border: 1px solid #e8ecf0;
+    }
+    
+    .schema-table { 
+        padding: 6px 12px; 
+        border-radius: 20px; 
+        display: inline-block; 
+        margin: 3px 6px 6px 0; 
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); 
+        color: #ffffff; 
+        font-size: 0.8rem; 
+        font-weight: 600;
+        border: none;
+        box-shadow: 0 2px 8px rgba(102, 126, 234, 0.25);
+        transition: all 0.3s ease;
+        cursor: pointer;
+    }
+    
+    .schema-table:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 15px rgba(102, 126, 234, 0.35);
+    }
+    
+    .schema-badge { 
+        background: linear-gradient(135deg, #e3ebff 0%, #d1e3ff 100%); 
+        color: #2c5aa0; 
+        border-radius: 15px; 
+        padding: 4px 12px; 
+        font-size: 0.7rem; 
+        font-weight: 700;
+        border: 1px solid #c1d5f0;
+        box-shadow: 0 1px 3px rgba(44, 90, 160, 0.15);
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+    }
+    
+    .schema-toggle { 
+        font-size: 0.8rem; 
+        opacity: 0.8;
+        background: linear-gradient(135deg, #667eea, #764ba2);
+        -webkit-background-clip: text;
+        background-clip: text;
+        color: transparent;
+        font-weight: 600;
+    }
+    
+    .schema-search { 
+        flex: 1; 
+        min-width: 280px;
+        position: relative;
+    }
+    
+    .schema-search input { 
+        width: 100%; 
+        padding: 12px 16px 12px 45px; 
+        border: 1px solid #d0d7de; 
+        border-radius: 10px; 
+        font-size: 0.9rem;
+        background: #ffffff;
+        transition: all 0.3s ease;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+    }
+    
+    .schema-search:before {
+        content: '🔍';
+        position: absolute;
+        left: 15px;
+        top: 50%;
+        transform: translateY(-50%);
+        font-size: 1.1rem;
+        opacity: 0.6;
+        z-index: 1;
+    }
+    
+    .schema-search input:focus { 
+        outline: none; 
+        border-color: #667eea; 
+        box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.2), 0 4px 15px rgba(0, 0, 0, 0.1);
+        transform: translateY(-1px);
+    }
+    
+    .schema-search input::placeholder {
+        color: #8b949e;
+        font-style: italic;
+    }
+    
+    .schema-stats {
+        background: linear-gradient(135deg, #ffffff 0%, #f8f9fb 100%);
+        padding: 8px 16px;
+        border-radius: 8px;
+        border: 1px solid #e8ecf0;
+        font-size: 0.85rem;
+        font-weight: 600;
+        color: #667eea;
+        box-shadow: 0 2px 8px rgba(102, 126, 234, 0.1);
+    }
+    /* New location for search inside the schema panel */
+    .schema-tree-search input { width:100%; padding:8px 10px; border:1px solid #ccd4dd; border-radius:6px; font-size:0.85rem; }
+    .schema-tree-search input:focus { outline:none; border-color:#667eea; box-shadow:0 0 0 2px rgba(102,126,234,0.25); }
+        .schema-stats { font-size:0.75rem; color:#555; background:#f3f6fa; padding:6px 10px; border-radius:20px; display:inline-flex; gap:8px; align-items:center; }
+        .schema-provider { font-weight:600; margin-top:18px; font-size:0.95rem; display:flex; align-items:center; gap:6px; }
+        .schema-provider + .schema-provider { border-top:1px dashed #e0e6ed; padding-top:14px; }
+        .schema-empty { font-style:italic; font-size:0.8rem; color:#777; }
+        .schema-expand-all { background:#f1f4fb; color:#334; }
+        .schema-expand-all:hover { background:#e3ebff; }
+        @media (max-width:768px){ .schema-tree-container{max-height:60vh;} }
+    /* Set workspace button states */
+    .workspace-btn{position:relative;display:inline-flex;align-items:center;gap:8px;min-width:190px;justify-content:center;white-space:nowrap;height:var(--control-height);padding:0 18px;line-height: calc(var(--control-height) - 4px); font-size:0.9rem;box-sizing:border-box;border:2px solid transparent;border-radius:8px;margin:0;}
+    .workspace-btn .ws-icon-slot{width:20px;display:inline-flex;align-items:center;justify-content:center;position:relative;height:100%;}
+    .workspace-btn .ws-label{display:inline-block;}
+    .workspace-btn .ws-spinner, .workspace-btn .ws-success{vertical-align:middle;}
+    .workspace-btn .ws-spinner{width:16px;height:16px;border:2px solid rgba(255,255,255,0.45);border-top-color:#fff;}
+    .workspace-btn .ws-spinner{width:14px;height:14px;border:2px solid rgba(255,255,255,0.4);border-top-color:#fff;border-radius:50%;animation:ws-spin 0.8s linear infinite;display:none;}
+    .workspace-btn.loading .ws-spinner{display:inline-block;}
+    .workspace-btn .ws-success{display:none;font-size:0.95rem;line-height:1;color:#2e8b57;font-weight:600;}
+    .workspace-btn.success .ws-success{display:inline-block;}
+    .workspace-btn.success .ws-spinner{display:none !important;}
+    /* success state keeps original primary colors; indicator handled by .ws-success visibility */
+    .workspace-btn.loading .ws-label{opacity:0.7;}
+    .workspace-btn.success .ws-label{opacity:0.95;}
+    @keyframes ws-spin{to{transform:rotate(360deg);}}
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🤖 Natural Language KQL Agent</h1>
+            <p>Ask questions about your Azure Log Analytics data in plain English</p>
+        </div>
+
+        <div class="main-content">
+            <!-- Setup Section -->
+            <div class="setup-section">
+                <h2>🔧 Workspace Setup</h2>                <div class="input-group">
+                    <input type="text" id="workspaceId" placeholder="Enter your Log Analytics Workspace ID" value="">
+                    <button id="setWorkspaceBtn" class="btn btn-primary workspace-btn" onclick="setupWorkspace()" aria-live="polite" aria-label="Set workspace">
+                        <span class="ws-icon-slot" aria-hidden="true">
+                            <span class="ws-spinner"></span>
+                            <span class="ws-success">✔</span>
+                        </span>
+                        <span class="ws-label">Set workspace</span>
+                    </button>
+                </div>
+                <div id="setupStatus" style="display:none"></div>
+                <div class="schema-controls">
+                    <button class="schema-primary-btn" id="showSchemaBtn" onclick="toggleSchema()" aria-expanded="false" aria-controls="schemaTreeContainer">
+                        <span class="icon" aria-hidden="true"></span>
+                        <span>Schema</span>
+                    </button>
+                    <div id="schemaStats" class="schema-stats" style="display:none;"></div>
+                </div>
+                <div id="schemaTreeContainer" class="schema-tree-container">
+                    <div class="schema-tree-search" style="margin-bottom:10px;">
+                        <input type="text" id="schemaSearch" placeholder="Filter resource types or tables..." oninput="filterSchema()" disabled>
+                    </div>
+                    <ul id="schemaTree" class="schema-tree"></ul>
+                </div>
+            </div>
+
+            <!-- Query Section -->
+            <div class="query-section">
+                <h2>💬 Ask Your Question</h2>
+                <div class="question-container">
+                    <textarea 
+                        id="questionInput" 
+                        class="question-input" 
+                        placeholder="Type your question here... (e.g., 'Show me failed requests from the last hour')"
+                    ></textarea>
+                    <button class="floating-go-btn" onclick="enhancedAskQuestion()">
+                        Go!
+                    </button>
+                </div>
+
+                <div class="suggestions" id="suggestionsContainer" style="display:none;">
+                    <h3>💡 Quick Suggestions:</h3>
+                    <div class="suggestion-pills">
+                        <div id="quickSuggestions"></div>
+                        <button type="button" class="more-suggestions-link" onclick="discoverWorkspaceExamples()" aria-label="Show more suggestions">💡 More Suggestions</button>
+                    </div>
+                </div>
+
+                <!-- Example Suggestions Section -->
+                <div id="exampleSuggestionsSection" class="example-suggestions-section" style="display: none;">
+                    <h3 id="exampleSuggestionsTitle">💡 Example Suggestions</h3>
+                    <div id="exampleSuggestionsContent" class="example-suggestions-content">
+                        <!-- Example suggestions will be populated here -->
+                    </div>
+                </div>                <!-- More Suggestions Section -->
+                <div id="workspaceExamplesSection" class="results-section" style="display: none;">
+                    <h3>� More Suggestions</h3>
+                    <div id="workspaceExamplesContent" class="result-content">
+                        <!-- Workspace examples will be populated here -->
+                    </div>
+                    <div id="workspaceTimestamp" class="timestamp"></div>                </div>
+            </div>          
+              
+            <!-- KQL Query Section -->
+            <div class="kql-query-section">
+                <h3>📝 Generated KQL Query</h3>
+                <div class="kql-query" id="kqlQuery"></div>
+            </div>
+
+            <!-- Results Section -->
+            <div id="resultsSection" class="results-section">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                    <h3>📊 Results</h3>
+                    <button id="expandAllBtn" class="expand-toggle" style="position: static; display: none; font-size: 0.9rem;" 
+                            onclick="toggleAllTables()" title="Expand/Collapse All Tables">
+                        📈 Expand All
+                    </button>
+                </div>
+                <div id="resultContent" class="result-content"></div>
+                <div id="timestamp" class="timestamp"></div>
+            </div>
+
+            <!-- Explain Results Section -->
+            <div id="explainResultsSection" class="explain-results-section" style="display: none;">
+                <h3>🧠 AI Analysis</h3>
+                <button class="btn-explain" onclick="explainResults()" id="explainBtn">
+                    🧠 Explain Results
+                </button>
+                <div id="explainContent"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let isConnected = false;
+        let currentQueryResult = null; // Store current query result for explain feature
+        let currentOriginalQuestion = '';
+        function updateStatus(connected, message = '') {
+            // Keep state but do not render any status indicator UI.
+            isConnected = connected;
+            updateUIElementsState();
+        }
+        
+        function updateUIElementsState() {
+            // Update all interactive UI elements based on connection status
+            updateSchemaButtonState();
+            updateGoButtonState();
+            updateQuestionInputState();
+            updateMoreSuggestionsButtonState();
+            updateSuggestionPillsState();
+            updateExampleItemsState();
+        }
+        
+        function updateSchemaButtonState() {
+            const schemaBtn = document.getElementById('showSchemaBtn');
+            if (!schemaBtn) return;
+            
+            if (isConnected) {
+                schemaBtn.disabled = false;
+                schemaBtn.classList.remove('disabled');
+                schemaBtn.onclick = toggleSchema;
+                schemaBtn.title = 'Show workspace schema and available tables';
+            } else {
+                schemaBtn.disabled = true;
+                schemaBtn.classList.add('disabled');
+                schemaBtn.onclick = null;
+                schemaBtn.title = 'Connect to a workspace first to view schema';
+            }
+        }
+        
+        function updateGoButtonState() {
+            const goBtn = document.querySelector('.floating-go-btn');
+            if (!goBtn) return;
+            
+            if (isConnected) {
+                goBtn.disabled = false;
+                goBtn.classList.remove('disabled');
+                goBtn.onclick = enhancedAskQuestion;
+                goBtn.title = 'Submit your question';
+            } else {
+                goBtn.disabled = true;
+                goBtn.classList.add('disabled');
+                goBtn.onclick = null;
+                goBtn.title = 'Connect to a workspace first to ask questions';
+            }
+        }
+        
+        function updateQuestionInputState() {
+            const questionInput = document.getElementById('questionInput');
+            if (!questionInput) return;
+            
+            if (isConnected) {
+                questionInput.disabled = false;
+                questionInput.classList.remove('disabled');
+                questionInput.placeholder = 'Ask your question about Azure Monitor logs...';
+            } else {
+                questionInput.disabled = true;
+                questionInput.classList.add('disabled');
+                questionInput.placeholder = 'Connect to a workspace first to ask questions...';
+            }
+        }
+        
+        function updateMoreSuggestionsButtonState() {
+            const moreSuggestionsBtn = document.querySelector('.more-suggestions-link');
+            if (!moreSuggestionsBtn) return;
+            
+            if (isConnected) {
+                moreSuggestionsBtn.disabled = false;
+                moreSuggestionsBtn.classList.remove('disabled');
+                moreSuggestionsBtn.onclick = discoverWorkspaceExamples;
+                moreSuggestionsBtn.title = 'Discover more query suggestions for your workspace';
+            } else {
+                moreSuggestionsBtn.disabled = true;
+                moreSuggestionsBtn.classList.add('disabled');
+                moreSuggestionsBtn.onclick = null;
+                moreSuggestionsBtn.title = 'Connect to a workspace first to get personalized suggestions';
+            }
+        }
+
+        function updateSuggestionPillsState() {
+            const pills = document.querySelectorAll('.suggestion-pill');
+            pills.forEach(pill => {
+                if (isConnected) {
+                    pill.classList.remove('disabled');
+                    pill.style.pointerEvents = 'auto';
+                } else {
+                    pill.classList.add('disabled');
+                    pill.style.pointerEvents = 'none';
+                }
+            });
+        }
+
+        function updateExampleItemsState() {
+            const examples = document.querySelectorAll('.example-item');
+            examples.forEach(example => {
+                if (isConnected) {
+                    example.classList.remove('disabled');
+                    example.style.pointerEvents = 'auto';
+                } else {
+                    example.classList.add('disabled');
+                    example.style.pointerEvents = 'none';
+                }
+            });
+        }
+        
+        function startWorkspaceSchemaPolling(){
+            // Cancel prior polling if any
+            if(workspacePollingInterval){ clearTimeout(workspacePollingInterval); workspacePollingInterval=null; }
+            showWorkspaceLoading('Discovering active tables in workspace...');
+            let attempt = 0;
+            const maxAttempts = parseInt(window.WORKSPACE_SCHEMA_MAX_POLL_ATTEMPTS || '60', 10); // up to ~60 polls
+            const baseDelay = 1000; // start at 1s
+            const startTime = Date.now();
+            const maxTotalMs = parseInt(window.WORKSPACE_SCHEMA_MAX_TOTAL_MS || '300000', 10); // 5 minutes cap
+
+            const finishReady = (data) => {
+                workspaceSchemaCache = data;
+                window.workspaceSchemaCache = data;
+                clearWorkspaceLoading('Workspace schema ready');
+                const btn = document.getElementById('setWorkspaceBtn');
+                if(btn){
+                    btn.classList.remove('loading');
+                    btn.classList.add('success');
+                    btn.disabled = false;
+                    btn.style.opacity = '1';
+                    btn.style.cursor = 'pointer';
+                    const label = btn.querySelector('.ws-label');
+                    if(label){
+                        if(!btn.dataset.originalLabel){ btn.dataset.originalLabel = label.textContent; }
+                        label.textContent = 'Workspace set';
+                    }
+                }
+                const setupStatus = document.getElementById('setupStatus');
+                if (setupStatus) {
+                    setupStatus.innerHTML = `
+                        <div style="margin-top: 10px; padding: 8px 12px; background: #d4edda; border: 1px solid #c3e6cb; border-radius: 6px; color: #155724; font-size: 0.9rem; display: flex; align-items: center; gap: 8px;">
+                            <span>✅ Workspace connected successfully! Tables discovered and ready for queries.</span>
+                        </div>
+                    `;
+                    setTimeout(()=>{ if(setupStatus){ setupStatus.style.display='none'; } }, 3000);
+                }
+                updateStatus(true);
+                const schemaBtn = document.getElementById('showSchemaBtn');
+                if(schemaBtn){
+                    schemaBtn.disabled = false;
+                    schemaBtn.classList.remove('disabled');
+                    schemaBtn.onclick = toggleSchema;
+                    schemaBtn.title = 'Show workspace schema and available tables';
+                }
+                if(manifestSchemaCache){
+                    schemaDataCache = buildFilteredSchema(manifestSchemaCache, workspaceSchemaCache);
+                } else {
+                    schemaDataCache = buildWorkspaceOnlySchema(workspaceSchemaCache);
+                }
+                console.log('[SchemaPolling] READY after attempts', attempt, 'elapsed_ms', Date.now()-startTime);
+                debugLogSchemaIntersection();
+                if(document.getElementById('schemaTreeContainer')?.style.display === 'block'){ renderSchemaTree(); }
+                renderQuickSuggestions();
+            };
+
+            const poll = async () => {
+                attempt++;
+                const elapsed = Date.now() - startTime;
+                if(elapsed > maxTotalMs){ console.warn('[SchemaPolling] Total timeout exceeded; aborting.'); return; }
+                let statusData = null;
+                try {
+                    // Light status check first to avoid heavy payload until ready
+                    const statusResp = await fetch('/api/workspace-schema-status');
+                    statusData = await statusResp.json();
+                } catch(e){
+                    if(attempt % 5 === 0){ console.warn('[SchemaPolling] Status error', e); }
+                }
+                // On first attempt if status pending, prime full endpoint once (harmless if already started by status auto-kickoff)
+                if(attempt === 1 && statusData && statusData.status === 'pending'){
+                    try { await fetch('/api/workspace-schema'); } catch(_) {}
+                }
+                if(statusData && statusData.status === 'ready'){
+                    // Fetch full schema payload once status flips to ready
+                    try {
+                        const fullResp = await fetch('/api/workspace-schema');
+                        const fullData = await fullResp.json();
+                        if(fullData.status === 'ready' && fullData.success){
+                            finishReady(fullData);
+                            return;
+                        } else {
+                            console.warn('[SchemaPolling] Ready status but full fetch not successful; retrying');
+                        }
+                    } catch(err){
+                        console.warn('[SchemaPolling] Full fetch error after ready status', err);
+                    }
+                } else if(statusData && statusData.status === 'uninitialized'){
+                    console.warn('[SchemaPolling] Workspace uninitialized; aborting.');
+                    return;
+                } else {
+                    if(attempt % 10 === 0){
+                        console.log('[SchemaPolling] Pending attempt', attempt, 'elapsed_ms', elapsed);
+                    }
+                }
+                if(attempt >= maxAttempts){
+                    console.warn('[SchemaPolling] Reached max attempts', maxAttempts, 'without ready; continue manual refresh or increase WORKSPACE_SCHEMA_MAX_POLL_ATTEMPTS');
+                    return;
+                }
+                const delay = Math.min(10000, Math.round(baseDelay * Math.pow(1.3, attempt-1))); // gentler curve
+                workspacePollingInterval = setTimeout(poll, delay);
+            };
+            poll();
+        }
+
+        // Reintroduced after polling refactor (was accidentally broken by patch)
+        function updateProgress(percent, message){
+            try {
+                const bar = document.getElementById('progressBar');
+                if(bar){
+                    bar.style.width = Math.min(100, Math.max(0, percent)) + '%';
+                }
+                const statusEl = document.getElementById('progressStatus');
+                if(statusEl && message){
+                    statusEl.textContent = message;
+                }
+                window.__lastProgressUpdate = { t: Date.now(), percent, message };
+            } catch(e){
+                console.warn('updateProgress failed', e);
+            }
+        }
+
+        function updateLoadingStep(stepId, status = 'active') {
+            const stepElement = document.getElementById(stepId);
+            const currentStepElement = document.getElementById('currentStep');
+            
+            if (stepElement) {
+                // Remove previous status classes
+                document.querySelectorAll('.step').forEach(step => {
+                    step.classList.remove('active', 'completed', 'retry');
+                });
+                
+                // Update current step
+                stepElement.classList.add(status);
+                
+                // Update current step text
+                const stepTexts = {
+                    'step-translate': '🔄 Translating your question to KQL...',
+                    'step-validate': '✅ Validating generated query...',
+                    'step-execute': '⚡ Executing query on Azure Log Analytics...',
+                    'step-format': '📊 Formatting results for display...'
+                };
+                
+                if (currentStepElement && stepTexts[stepId]) {
+                    currentStepElement.textContent = stepTexts[stepId];
+                    
+                    // Add retry indication if needed
+                    if (status === 'retry') {
+                        currentStepElement.textContent += ' (retrying for better results...)';
+                    }
+                }
+            }
+        }
+        // Restore missing helper to reset the floating Go button after query completes or errors
+        function resetGoButton(){
+            try {
+                const goButton = document.querySelector('.floating-go-btn');
+                if(!goButton) return;
+                goButton.disabled = false;
+                goButton.innerHTML = 'Go!';
+                goButton.style.opacity = '1';
+                goButton.style.background = '';
+                goButton.style.cursor = 'pointer';
+            } catch(e){
+                console.warn('resetGoButton failed', e);
+            }
+        }
+          function showResult(result, timestamp) {
+    const resultContent = document.getElementById('resultContent');
+    const timestampElement = document.getElementById('timestamp');
+    const resultsSection = document.getElementById('resultsSection');
+    const kqlQueryElement = document.getElementById('kqlQuery');
+
+    // Hide loading indicator
+    hideLoading();
+
+    // Reset the Go button
+    resetGoButton();
+
+    // Make sure the results section is visible
+    resultsSection.classList.add('visible');
+    resultsSection.style.display = 'block';
+
+    // Store current result for explain feature
+    currentQueryResult = result;
+
+    if (result.type === 'query_success') {
+        // Show the generated KQL query in the new section
+        kqlQueryElement.textContent = result.kql_query;
+
+        // Show the data tables
+        if (result.data && result.data.type === 'table_data') {
+            const tables = result.data.tables;
+            if (tables && tables.length > 0) {
+                let html = '';
+                tables.forEach(table => {
+                    html += createTableHTML(table);
+                });
+                resultContent.innerHTML = html;
+
+                // Show explain section for successful queries with data
+                showExplainSection();
+            } else {
+                resultContent.innerHTML = `<div class="no-data-message">No data returned from query</div>`;
+                hideExplainSection();
+            }
+        } else if (result.data && result.data.type === 'no_data') {
+            resultContent.innerHTML = `<div class="no-data-message">${result.data.message}</div>`;
+            hideExplainSection();
+        }
+    } else if (result.type === 'query_error') {
+        resultContent.innerHTML = `<div class="error">❌ Error: ${result.error}</div>`;
+        hideExplainSection();
+    } else {
+        resultContent.innerHTML = `<pre style="white-space: pre-wrap;">${JSON.stringify(result, null, 2)}</pre>`;
+        hideExplainSection();
+    }
+
+    timestampElement.textContent = `Response received at: ${timestamp}`;
+    
+    // Check if tables need expansion controls
+    checkTableOverflow();
+    
+    // Auto-scroll to results section after query completion
+    setTimeout(() => {
+        const resultsSection = document.getElementById('resultsSection');
+        console.log('Auto-scrolling to results section:', resultsSection); // Debug log
+        if (resultsSection) {
+            // Try multiple scroll approaches for better compatibility
+            try {
+                resultsSection.scrollIntoView({ 
+                    behavior: 'smooth', 
+                    block: 'start' 
+                });
+                console.log('Scroll initiated with scrollIntoView'); // Debug log
+            } catch (e) {
+                // Fallback for browsers that don't support smooth scrolling
+                resultsSection.scrollIntoView(true);
+                console.log('Fallback scroll used'); // Debug log
+            }
+            
+            // Additional fallback - scroll to a specific position
+            const rect = resultsSection.getBoundingClientRect();
+            if (rect.top > window.innerHeight || rect.top < 0) {
+                window.scrollTo({
+                    top: window.pageYOffset + rect.top - 20,
+                    behavior: 'smooth'
+                });
+                console.log('Additional fallback scroll used'); // Debug log
+            }
+        }
+    }, 300); // Further increased delay to account for the 500ms delay in enhancedAskQuestion
+}
+
+function createTableHTML(table) {
+    let html = '';
+    const tableId = `table-${Math.random().toString(36).substr(2, 9)}`;
+    
+    // Table header with info
+    html += `<div class="table-header">`;
+    html += `<div class="table-title">📊 Table ${table.table_number || 1}</div>`;
+    html += `<div class="table-info">${table.row_count} rows</div>`;
+    html += `</div>`;
+    
+    if (table.has_data && table.columns && table.rows) {
+        html += `<div class="result-container" id="${tableId}">`;
+        html += `<table class="result-table">`;
+        
+        // Table header
+        html += `<thead><tr>`;
+        table.columns.forEach(column => {
+            html += `<th>${escapeHtml(column)}</th>`;
+        });
+        html += `</tr></thead>`;
+        
+        // Table body
+        html += `<tbody>`;
+        table.rows.forEach(row => {
+            html += `<tr>`;
+            row.forEach((cell, index) => {
+                const cellValue = cell === null || cell === undefined ? 'NULL' : String(cell);
+                const cellClass = getCellClass(cell);
+                html += `<td class="${cellClass}">${escapeHtml(cellValue)}</td>`;
+            });
+            html += `</tr>`;
+        });
+        html += `</tbody>`;
+        
+        html += `</table>`;
+        html += `</div>`;
+        
+        // Add table statistics
+        if (table.has_data) {
+            html += `<div class="table-stats">`;
+            html += `📊 ${table.columns.length} columns • ${table.row_count} rows`;
+            if (table.row_count !== table.rows.length) {
+                html += ` • Showing ${table.rows.length} of ${table.row_count}`;
+            }
+            html += `</div>`;
+        }
+    } else {
+        html += `<div class="no-data-message">No data in this table</div>`;
+    }
+    
+    return html;
+}
+        
+function createExplainSection() {
+    return `
+        <div class="explain-section">
+            <button class="btn-explain" onclick="explainResults()" id="explainBtn">
+                🧠 Explain Results
+            </button>
+            <div id="explainContent"></div>
+        </div>
+    `;
+}
+
+function showExplainSection() {
+    const explainSection = document.getElementById('explainResultsSection');
+    const explainContent = document.getElementById('explainContent');
+    
+    // Clear any previous content
+    explainContent.innerHTML = '';
+    
+    // Show the explain section
+    explainSection.style.display = 'block';
+}
+
+function hideExplainSection() {
+    const explainSection = document.getElementById('explainResultsSection');
+    if (explainSection) {
+        explainSection.style.display = 'none';
+    }
+}
+
+async function explainResults() {
+    const explainBtn = document.getElementById('explainBtn');
+    const explainContent = document.getElementById('explainContent');
+    
+    // Check if we have current results to explain
+    if (!currentQueryResult || currentQueryResult.type !== 'query_success') {
+        explainContent.innerHTML = `<div class="explain-result"><h4>❌ No Results to Explain</h4><p>Please run a successful query first.</p></div>`;
+        return;
+    }
+    
+    // Disable button and show loading
+    explainBtn.disabled = true;
+    explainContent.innerHTML = `
+        <div class="explain-loading">
+            <div class="explain-spinner"></div>
+            Analyzing query results with AI...
+        </div>
+    `;
+    
+    try {
+        // Make API call to explain endpoint
+        const response = await fetch('/api/explain', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                query_result: currentQueryResult,
+                original_question: currentOriginalQuestion
+            })
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            explainContent.innerHTML = `
+                <div class="explain-result">
+                    <h4>🧠 AI Analysis</h4>
+                    <p>${data.explanation.replace(/\n/g, '<br>')}</p>
+                    <small style="color: #666;">Analysis generated at: ${data.timestamp}</small>
+                </div>
+            `;
+        } else {
+            explainContent.innerHTML = `
+                <div class="explain-result">
+                    <h4>❌ Explanation Failed</h4>
+                    <p>${data.error}</p>
+                </div>
+            `;
+        }
+        
+    } catch (error) {
+        explainContent.innerHTML = `
+            <div class="explain-result">
+                <h4>❌ Error</h4>
+                <p>Failed to explain results: ${error.message}</p>
+            </div>
+        `;            } finally {
+        // Re-enable the button
+        explainBtn.disabled = false;
+    }
+}
+
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+
+function showError(error) {
+    const resultContent = document.getElementById('resultContent');
+    const timestampElement = document.getElementById('timestamp');
+    const resultsSection = document.getElementById('resultsSection');
+    
+    // Hide loading indicator
+    hideLoading();
+    
+    // Reset the Go button
+    resetGoButton();
+    
+    // Make sure the results section is visible
+    resultsSection.classList.add('visible');
+    resultsSection.style.display = 'block';
+    
+    resultContent.innerHTML = `<div class="error">❌ Error: ${error}</div>`;
+    timestampElement.textContent = `Error occurred at: ${new Date().toLocaleString()}`;
+    
+    // Hide explain section when showing errors
+    hideExplainSection();
+    
+    // Auto-scroll to results section after error
+    setTimeout(() => {
+        const resultsSection = document.getElementById('resultsSection');
+        if (resultsSection) {
+            // Try multiple scroll approaches for better compatibility
+            try {
+                resultsSection.scrollIntoView({ 
+                    behavior: 'smooth', 
+                    block: 'start' 
+                });
+            } catch (e) {
+                // Fallback for browsers that don't support smooth scrolling
+                resultsSection.scrollIntoView(true);
+            }
+            
+            // Additional fallback - scroll to a specific position
+            const rect = resultsSection.getBoundingClientRect();
+            if (rect.top > window.innerHeight || rect.top < 0) {
+                window.scrollTo({
+                    top: window.pageYOffset + rect.top - 20,
+                    behavior: 'smooth'
+                });
+            }
+        }
+    }, 200); // Increased delay to ensure content is rendered
+}
+
+
+async function testConnection() {
+    if (!isConnected) {
+        updateStatus(false, 'Please setup workspace first');
+        return;
+    }
+
+    showLoading();
+
+    try {
+        const response = await fetch('/api/test-connection', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' }
+        });
+
+        const data = await response.json();
+        
+        if (data.success) {
+            showResult(data.result, data.timestamp);
+        } else {
+            showError(data.error);
+        }
+    } catch (error) {
+        showError(`Connection test failed: ${error.message}`);
+    }
+    
+}
+
+async function askQuestion() {
+    const question = document.getElementById('questionInput').value.trim();
+    
+    if (!question) {
+        showError('Please enter a question');
+        return;
+    }
+
+    if (!isConnected) {
+        showError('Please setup workspace first');
+        return;
+    }
+
+    // Show initial loading
+    showLoading('🚀 Starting query process...');
+    
+    // Simulate progress steps
+    setTimeout(() => updateLoadingStep('step-translate', 'active'), 200);
+    
+    try {
+        const response = await fetch('/api/query', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ question: question })
+        });
+
+        // Show validation step
+        updateLoadingStep('step-translate', 'completed');
+        updateLoadingStep('step-validate', 'active');
+        
+        const data = await response.json();
+        
+        // Show execution step
+        updateLoadingStep('step-validate', 'completed');
+        updateLoadingStep('step-execute', 'active');
+        
+        // Small delay to show execution step
+        await new Promise(resolve => setTimeout(resolve, 500));
+        
+        // Show formatting step
+        updateLoadingStep('step-execute', 'completed');
+        updateLoadingStep('step-format', 'active');
+        
+        // Small delay to show formatting step
+        await new Promise(resolve => setTimeout(resolve, 300));
+        
+        if (data.success) {
+            updateLoadingStep('step-format', 'completed');
+            showResult(data.result, data.timestamp);
+        } else {
+            showError(data.error);
+        }
+    } catch (error) {
+        showError(`Query failed: ${error.message}`);
+    }
+}
+
+function simulateRetry() {
+    // Show retry indication
+    updateLoadingStep('step-translate', 'retry');
+      setTimeout(() => {
+        updateLoadingStep('step-translate', 'completed');
+        updateLoadingStep('step-validate', 'active');
+    }, 1500);
+}
+
+function enhancedAskQuestion() {
+    // Check if workspace is connected first
+    if (!isConnected) {
+        console.log('Workspace not connected, ignoring request');
+        return;
+    }
+    
+    const question = document.getElementById('questionInput').value.trim();
+    
+    // Close any existing explain results window when starting a new query
+    hideExplainSection();
+    
+    // Enhanced button loading state with spinner - do this FIRST
+    const goButton = document.querySelector('.floating-go-btn');
+    if (goButton) {
+        goButton.disabled = true;
+        goButton.innerHTML = '<div class="button-spinner"></div> Processing...';
+        goButton.style.opacity = '0.8';
+        goButton.style.background = 'linear-gradient(135deg, #6c757d 0%, #495057 100%)';
+        goButton.style.cursor = 'not-allowed';
+    }
+
+    // Show the nice loading in results pane immediately
+    showLoading('🚀 Preparing to process your question...');
+    
+    // Scroll to results section immediately when loading starts
+    setTimeout(() => {
+        const resultsSection = document.getElementById('resultsSection');
+        console.log('Immediate scroll to results section on Go click'); // Debug
+        if (resultsSection) {
+            resultsSection.scrollIntoView({ 
+                behavior: 'smooth', 
+                block: 'start' 
+            });
+        }
+    }, 200); // Small delay to ensure showLoading has rendered
+    
+    // Now do validation checks and show errors in the loading area if needed
+    if (!question) {
+        setTimeout(() => {
+            showError('Please enter a question');
+        }, 500);
+        return;
+    }
+
+    if (!isConnected) {
+        setTimeout(() => {
+            showError('Please setup workspace first');
+        }, 500);
+        return;
+    }
+
+    // Store the original question for explain feature
+    currentOriginalQuestion = question;
+    
+    // Start with translation step
+    setTimeout(() => {
+        updateLoadingStep('step-translate', 'active');
+        processQuestionWithRetry(question);
+    }, 300);
+}
+
+async function processQuestionWithRetry(question) {
+    let retryCount = 0;
+    const maxRetries = 2;
+    const startTime = Date.now();
+    
+    // Initialize progress
+    updateProgress(10, '🔄 Starting translation process...');
+    
+    while (retryCount <= maxRetries) {
+        try {
+            if (retryCount > 0) {
+                // Show retry indication
+                updateProgress(15 + (retryCount * 5), `🔄 Retry attempt ${retryCount}...`);
+                updateLoadingStep('step-translate', 'retry');
+                await new Promise(resolve => setTimeout(resolve, 1000));
+            }
+            
+            // Translation phase
+            updateProgress(25, '🔄 Translating to KQL...');
+            updateLoadingStep('step-translate', 'active');
+            
+            // Simulate translation time
+            await new Promise(resolve => setTimeout(resolve, 800 + (retryCount * 500)));
+            
+            // Make the actual API call
+            updateProgress(40, '📡 Sending request to server...');
+            const response = await fetch('/api/query', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ question: question })
+            });
+
+            // Validation phase
+            updateProgress(60, '✅ Validating generated query...');
+            updateLoadingStep('step-translate', 'completed');
+            updateLoadingStep('step-validate', 'active');
+            await new Promise(resolve => setTimeout(resolve, 400));
+            
+            const data = await response.json();
+            
+            // Check if we need to retry (simulate retry logic)
+            if (!data.success && retryCount < maxRetries && data.error.includes('translation')) {
+                retryCount++;
+                updateLoadingStep('step-validate', 'retry');
+                continue;
+            }
+            
+            // Execution phase
+            updateProgress(80, '⚡ Executing query on Azure...');
+            updateLoadingStep('step-validate', 'completed');
+            updateLoadingStep('step-execute', 'active');
+            await new Promise(resolve => setTimeout(resolve, 600));
+            
+            // Formatting phase
+            updateProgress(95, '📊 Formatting results...');
+            updateLoadingStep('step-execute', 'completed');
+            updateLoadingStep('step-format', 'active');
+            await new Promise(resolve => setTimeout(resolve, 300));
+            
+            // Complete
+            updateProgress(100, '✅ Complete!');
+            
+            if (data.success) {
+                updateLoadingStep('step-format', 'completed');
+                const totalTime = ((Date.now() - startTime) / 1000).toFixed(1);
+                
+                // Show completion with stats
+                setTimeout(() => {
+                    showResult(data.result, data.timestamp);
+                    
+                    // Auto-scroll to results after showing them
+                    setTimeout(() => {
+                        const resultsSection = document.getElementById('resultsSection');
+                        console.log('Scrolling to results section after showResult'); // Debug
+                        if (resultsSection) {
+                            resultsSection.scrollIntoView({ 
+                                behavior: 'smooth', 
+                                block: 'start' 
+                            });
+                        }
+                    }, 100); // Short delay after showResult completes
+                }, 500);
+            } else {
+                showError(data.error);
+                
+                // Auto-scroll to error results
+                setTimeout(() => {
+                    const resultsSection = document.getElementById('resultsSection');
+                    console.log('Scrolling to results section after showError'); // Debug
+                    if (resultsSection) {
+                        resultsSection.scrollIntoView({ 
+                            behavior: 'smooth', 
+                            block: 'start' 
+                        });
+                    }
+                }, 100);
+            }
+            break;
+            
+        } catch (error) {
+            if (retryCount < maxRetries) {
+                retryCount++;
+                updateProgress(20 + (retryCount * 5), `🔄 Retrying... (${retryCount}/${maxRetries})`);
+                updateLoadingStep('step-translate', 'retry');
+                continue;
+            } else {
+                showError(`Query failed after ${maxRetries + 1} attempts: ${error.message}`);
+                
+                // Auto-scroll to error results
+                setTimeout(() => {
+                    const resultsSection = document.getElementById('resultsSection');
+                    console.log('Scrolling to results section after catch error'); // Debug
+                    if (resultsSection) {
+                        resultsSection.scrollIntoView({ 
+                            behavior: 'smooth', 
+                            block: 'start' 
+                        });
+                    }
+                }, 100);
+                break;
+            }                }
+    }
+}
+
+        // Category example suggestion functions removed - examples now used internally for AI translation only
+        
+        function setQuestion(question) {
+            document.getElementById('questionInput').value = question;
+            
+            // Scroll back to the question input area
+            const questionSection = document.querySelector('.query-section');
+            if (questionSection) {
+                questionSection.scrollIntoView({ 
+                    behavior: 'smooth', 
+                    block: 'start' 
+                });
+            }
+        }        async function discoverWorkspaceExamples() {
+            console.log('More Suggestions button clicked'); // Debug log
+            
+            // Check if workspace is connected first
+            if (!isConnected) {
+                console.log('Workspace not connected, ignoring request');
+                return;
+            }
+            
+            // Add loading state to the more suggestions button
+            const workspaceButton = document.querySelector('.more-suggestions-link');
+            if (!workspaceButton) {
+                console.error('More suggestions button not found');
+                showError('More suggestions button not found');
+                return;
+            }
+            
+            const originalText = workspaceButton.textContent;
+            workspaceButton.textContent = '⏳ Loading...';
+            workspaceButton.style.opacity = '0.7';
+            workspaceButton.style.pointerEvents = 'none';
+            workspaceButton.disabled = true;
+            
+            // Allow workspace examples discovery even without connection
+            // since we're just showing available example files
+            
+            try {
+                console.log('Showing loading state...'); // Debug log
+                showLoading('Discovering workspace tables and available examples...');
+                
+                console.log('Making API request to /api/workspace-examples...'); // Debug log
+                const response = await fetch('/api/workspace-examples', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    }
+                });
+                
+                console.log('API response received:', response.status); // Debug log
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+                
+                const data = await response.json();
+                console.log('API data received:', data); // Debug log
+                
+                if (data.success) {
+                    console.log('Showing workspace examples...'); // Debug log
+                    showWorkspaceExamples(data);
+                } else {
+                    console.error('API returned error:', data.error); // Debug log
+                    showError(`Failed to discover examples: ${data.error}`);
+                }
+            } catch (error) {
+                console.error('Network error occurred:', error); // Debug log
+                showError(`Network error: ${error.message}`);            } finally {
+                // Restore button state
+                const workspaceButton = document.querySelector('.more-suggestions-link');
+                if (workspaceButton) {
+                    workspaceButton.textContent = '💡 More Suggestions';
+                    workspaceButton.style.opacity = '1';
+                    workspaceButton.style.pointerEvents = 'auto';
+                    workspaceButton.disabled = false;
+                }
+            }
+        }        function getDisplayName(tableName) {
+            const displayNameMap = {
+                'AppRequests': 'Requests',
+                'AppExceptions': 'Exceptions',
+                'AppTraces': 'Traces',
+                'AppDependencies': 'Dependencies',
+                'AppPageViews': 'Page Views',
+                'AppCustomEvents': 'Custom Events',
+                'AppPerformanceCounters': 'Performance',
+                'Usage': 'Usage',
+                'Heartbeat': 'Heartbeat',
+                'SecurityEvent': 'Security Events',
+                'Event': 'Events',
+                'Syslog': 'System Logs'
+            };
+            return displayNameMap[tableName] || tableName;
+        }
+
+        function showWorkspaceExamples(data) {
+            try {
+                // First, ensure the main results section is hidden
+                const resultsSection = document.getElementById('resultsSection');
+                if (resultsSection) {
+                    resultsSection.classList.remove('visible');
+                    resultsSection.style.display = 'none'; // Force hide
+                }
+                
+                const workspaceSection = document.getElementById('workspaceExamplesSection');
+                
+                if (!workspaceSection) {
+                    throw new Error('Workspace section not found');
+                }
+                  // Create simplified display with only tables
+
+                let html = `
+                <div class="workspace-discovery-results">
+                    <div class="tables-with-examples">
+                        <div class="tables-grid">
+            `;
+            
+            for (const [tableName, tableData] of Object.entries(data.available_examples)) {
+                const displayName = getDisplayName(tableName);
+                html += `                    <div class="table-card">
+                        <div class="table-examples">
+                            <div class="table-actions">
+                                <div class="examples-chevron expanded" onclick="toggleExamples('${tableName}')" id="chevron-${tableName}">
+                                    <span class="chevron-icon" style="transform: rotate(90deg);">▶</span>
+                                    <span class="chevron-text">${displayName}</span>
+                                </div>
+                            </div>
+                            <div id="examples-${tableName}" class="table-examples-list" style="display: block;">
+                                <div style="text-align: center; padding: 10px; color: #999; font-size: 0.9rem;">
+                                    ⏳ Loading examples...
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }
+              html += `
+                        </div>
+                                       </div>
+                </div>
+                <div class="timestamp">Last updated: ${data.timestamp}</div>
+            `;
+            
+            // Replace the entire section content
+            workspaceSection.innerHTML = html;
+            
+            // Force the workspace section to be visible
+            workspaceSection.style.display = 'block';
+            workspaceSection.classList.add('visible');
+            
+            // Scroll to workspace examples section
+            setTimeout(() => {
+                workspaceSection.scrollIntoView({ behavior: 'smooth' });
+                }, 100);
+            
+            // Auto-load examples for all tables to show them expanded by default
+            setTimeout(() => {
+                for (const tableName of Object.keys(data.available_examples)) {
+                    // Load examples for each table individually with a small delay
+                    setTimeout(() => {
+                        getExamplesForTable(tableName, true); // Silent loading
+                    }, 100 * Object.keys(data.available_examples).indexOf(tableName));
+                }
+            }, 200); // Reduced delay for faster loading
+            
+            } catch (error) {
+                showError(`Failed to display workspace examples: ${error.message}`);
+            }
+        }
+
+        function hideLoading() {
+            // Hide the loading indicator by clearing the results section content
+            // This will be called from showResult() and showError() to ensure clean state
+            const resultsSection = document.getElementById('resultsSection');
+            const resultContent = document.getElementById('resultContent');
+            
+            // Clear any loading content
+            if (resultContent && resultContent.innerHTML.includes('loading')) {
+                resultContent.innerHTML = '';
+            }
+        }
+
+        // Show a loading panel in the results area with optional message
+        function showLoading(message){
+            const resultsSection = document.getElementById('resultsSection');
+            const resultContent = document.getElementById('resultContent');
+            if(resultsSection){
+                resultsSection.classList.add('visible');
+                resultsSection.style.display = 'block';
+            }
+            if(resultContent){
+                const msg = message || '⏳ Loading...';
+                resultContent.innerHTML = `
+                    <div class="loading-container">
+                        <div class="spinner" style="margin-bottom:8px;"></div>
+                        <div class="loading-message">${escapeHtml(msg)}</div>
+                    </div>`;
+            }
+        }
+
+        function getCellClass(cell) {
+            if (cell === null || cell === undefined) {
+                return 'cell-null';
+            }
+            if (typeof cell === 'number') {
+                return 'cell-number';
+            }
+            if (typeof cell === 'boolean') {
+                return `cell-boolean ${cell ? 'true' : 'false'}`;
+            }
+            return '';
+        }        function getExamples(scenario, silent = false) {
+            // Examples can be loaded even without connection since they're static files
+            // Only block if we're not in silent mode and not connected
+            if (!silent && !isConnected) {
+                showError('Please setup workspace first');
+                return;
+            }
+
+            // Show loading in the dedicated section only if not silent
+            if (!silent) {
+                showExampleSuggestionsLoading(scenario);
+            } else {
+                }
+
+            try {
+                fetch(`/api/examples/${scenario}`)
+                    .then(response => {
+                        return response.json();
+                    })
+                    .then(data => {
+                        if (data.success) {
+                            showExampleSuggestions(data.result);
+                        } else {
+                            showExampleSuggestionsError(data.error);
+                        }
+                    })
+                    .catch(error => {
+                        showExampleSuggestionsError(`Failed to get examples: ${error.message}`);
+                    });
+            } catch (error) {
+                showExampleSuggestionsError(`Failed to get examples: ${error.message}`);
+            }
+        }
+
+        function toggleExamples(tableName) {
+            const examplesContainer = document.getElementById(`examples-${tableName}`);
+            const chevron = document.getElementById(`chevron-${tableName}`);
+            const chevronIcon = chevron.querySelector('.chevron-icon');
+            
+            if (examplesContainer.style.display === 'block') {
+                // Collapsing
+                examplesContainer.style.display = 'none';
+                chevron.classList.remove('expanded');
+                chevronIcon.style.transform = 'rotate(0deg)';
+            } else {
+                // Expanding - check if examples are already loaded
+                if (examplesContainer.innerHTML.trim() === '' || examplesContainer.innerHTML.includes('<!-- Examples will be populated here -->')) {
+                    // Examples not loaded yet, load them
+                    getExamplesForTable(tableName);
+                } else {
+                    // Examples already loaded, just show them
+                    examplesContainer.style.display = 'block';
+                }
+                
+                // Update chevron appearance
+                chevron.classList.add('expanded');
+                chevronIcon.style.transform = 'rotate(90deg)';
+            }
+        }        function getExamplesForTable(tableName, silent = false) {
+            // Map table names to scenario names
+            const tableToScenarioMap = {
+                'AppRequests': 'requests',
+                'AppExceptions': 'exceptions', 
+                'AppTraces': 'traces',
+                'AppDependencies': 'dependencies',
+                'AppPageViews': 'page_views',
+                'AppCustomEvents': 'custom_events',
+                'AppPerformanceCounters': 'performance',
+                'Usage': 'usage',
+                'Heartbeat': 'heartbeat',
+                'SecurityEvent': 'security',
+                'Event': 'events',
+                'Syslog': 'syslog'
+            };
+            
+            const scenario = tableToScenarioMap[tableName];
+            if (scenario) {
+                // Load examples directly for this table
+                loadExamplesForSpecificTable(scenario, tableName, silent);
+                
+                // Only scroll if not silent (i.e., user explicitly requested)
+                if (!silent) {
+                    setTimeout(() => {
+                        const exampleSuggestionsSection = document.getElementById('exampleSuggestionsSection');
+                        if (exampleSuggestionsSection) {
+                            exampleSuggestionsSection.scrollIntoView({ 
+                                behavior: 'smooth', 
+                                block: 'start' 
+                            });
+                        }
+                    }, 500); // Small delay to ensure the examples are loaded first
+                }
+            } else {
+                // Handle tables without example scenarios gracefully
+                const examplesContainer = document.getElementById(`examples-${tableName}`);
+                if (examplesContainer) {
+                    examplesContainer.innerHTML = `
+                        <div style="text-align: center; padding: 15px; color: #666;">
+                            💡 No predefined examples available for this table.<br>
+                            <small>Try asking questions about this table directly in the question box above.</small>
+                        </div>
+                    `;
+                    examplesContainer.style.display = 'block';
+                    
+                    // Update chevron to expanded state
+                    const chevron = document.getElementById(`chevron-${tableName}`);
+                    const chevronIcon = chevron.querySelector('.chevron-icon');
+                    if (chevron) {
+                        chevron.classList.add('expanded');
+                        chevronIcon.style.transform = 'rotate(90deg)';
+                    }
+                }
+            }
+        }        function loadExamplesForSpecificTable(scenario, tableName, silent = false) {
+            // Don't show loading spinner if silent
+            if (!silent) {
+                const examplesContainer = document.getElementById(`examples-${tableName}`);
+                if (examplesContainer) {
+                    examplesContainer.innerHTML = `
+                        <div style="text-align: center; padding: 15px; color: #666;">
+                            <div class="spinner" style="margin: 0 auto 10px;"></div>
+                            Loading ${scenario} examples...
+                        </div>
+                    `;
+                }
+            }
+            
+            fetch(`/api/examples/${scenario}`)
+                .then(response => {
+                    return response.json();
+                })
+                .then(data => {
+                    if (data.success && data.result) {
+                        displayExamplesForTable(data.result, tableName);
+                    } else {
+                        showErrorForTable(data.error || 'Unknown error', tableName);
+                    }
+                })
+                .catch(error => {
+                    showErrorForTable(`Failed to load examples: ${error.message}`, tableName);
+                });
+        }
+
+        function displayExamplesForTable(result, tableName) {
+            const examplesContainer = document.getElementById(`examples-${tableName}`);
+            if (!examplesContainer) {
+                return;
+            }
+            
+            if (result.suggestions && result.suggestions.length > 0) {
+                let html = '';
+                result.suggestions.forEach((suggestion, index) => {
+                    html += `<div class="example-suggestion" data-suggestion="${index}" data-table="${tableName}">${escapeHtml(suggestion)}</div>`;
+                });
+                html += `<div style="margin-top: 10px; font-size: 0.8rem; color: #666; text-align: center;">💡 Click any suggestion above to add it to your question box</div>`;
+                
+                examplesContainer.innerHTML = html;
+                examplesContainer.style.display = 'block';
+                
+                // Add click event listeners
+                examplesContainer.querySelectorAll('.example-suggestion').forEach((element, index) => {
+                    element.addEventListener('click', () => {
+                        if (!isConnected) return;
+                        const suggestion = result.suggestions[index];
+                        setQuestion(suggestion);
+                    });
+                });
+                
+                } else {
+                showErrorForTable('No examples available', tableName);
+            }
+            
+            // Update chevron to expanded state
+            const chevron = document.getElementById(`chevron-${tableName}`);
+            const chevronIcon = chevron.querySelector('.chevron-icon');
+            if (chevron) {
+                chevron.classList.add('expanded');
+                chevronIcon.style.transform = 'rotate(90deg)';
+            }
+        }
+
+        function showErrorForTable(error, tableName) {
+            const examplesContainer = document.getElementById(`examples-${tableName}`);
+            if (examplesContainer) {
+                examplesContainer.innerHTML = `
+                    <div style="text-align: center; padding: 15px; color: #d32f2f;">
+                        ❌ ${error}
+                    </div>
+                `;
+                examplesContainer.style.display = 'block';
+                
+                // Update chevron to expanded state
+                const chevron = document.getElementById(`chevron-${tableName}`);
+                const chevronIcon = chevron.querySelector('.chevron-icon');
+                if (chevron) {
+                    chevron.classList.add('expanded');
+                    chevronIcon.style.transform = 'rotate(90deg)';
+                }
+            }
+        }
+
+        function showExampleSuggestionsLoadingForTable(scenario, tableName) {
+            const examplesContainer = document.getElementById(`examples-${tableName}`);
+            if (!examplesContainer) {
+                return;
+            }
+            
+            examplesContainer.innerHTML = `
+                <div style="text-align: center; padding: 15px; color: #666;">
+                    <div class="spinner" style="margin: 0 auto 10px;"></div>
+                    Loading ${scenario} examples...
+                </div>
+            `;
+            examplesContainer.style.display = 'block';
+            
+            // Ensure chevron stays in expanded state during loading
+            const chevron = document.getElementById(`chevron-${tableName}`);
+            const chevronIcon = chevron.querySelector('.chevron-icon');
+            if (chevron) {
+                chevron.classList.add('expanded');
+                chevronIcon.style.transform = 'rotate(90deg)';
+            }
+        }        function showExampleSuggestions(result) {
+            if (result.type === 'example_suggestions') {
+                // Get the current table name that was stored when the button was clicked
+                const tableName = window.currentExampleTable;
+                if (!tableName) {
+
+                    return;
+                }
+                
+                // Find the examples container for this specific table
+                const examplesContainer = document.getElementById(`examples-${tableName}`);
+                if (!examplesContainer) {
+                    return;
+                }
+                
+                let html = '';
+                result.suggestions.forEach((suggestion, index) => {
+                    html += `<div class="example-suggestion" data-suggestion="${index}" data-table="${tableName}">${escapeHtml(suggestion)}</div>`;
+                });
+                html += `<div style="margin-top: 10px; font-size: 0.8rem; color: #666; text-align: center;">💡 Click any suggestion above to add it to your question box</div>`;
+                
+                // Add fade-in effect
+                examplesContainer.style.opacity = '0';
+                examplesContainer.innerHTML = html;
+                examplesContainer.style.display = 'block';
+                
+                // Trigger fade-in
+                setTimeout(() => {
+                    examplesContainer.style.opacity = '1';
+                    }, 50);
+                
+                // Update chevron to expanded state
+                const chevron = document.getElementById(`chevron-${tableName}`);
+                const chevronIcon = chevron.querySelector('.chevron-icon');
+                chevron.classList.add('expanded');
+                chevronIcon.style.transform = 'rotate(90deg)';
+                // Add click event listeners to suggestion elements
+                examplesContainer.querySelectorAll('.example-suggestion').forEach((element, index) => {
+                    element.addEventListener('click', () => {
+                        if (!isConnected) return;
+                        const suggestion = result.suggestions[index];
+                        setQuestion(suggestion);
+                    });
+                });
+                
+                } else {
+                }
+        }function showExampleSuggestionsError(error) {
+            // Get the current table name that was stored when the button was clicked
+            const tableName = window.currentExampleTable;
+            if (!tableName) {
+
+                return;
+            }
+            
+            // Find the examples container for this specific table
+            const examplesContainer = document.getElementById(`examples-${tableName}`);
+            if (!examplesContainer) {
+                return;
+            }
+              examplesContainer.innerHTML = `
+                <div style="text-align: center; padding: 15px; color: #dc3545;">
+                    ❌ ${error}
+                </div>
+            `;
+            examplesContainer.style.display = 'block';
+            
+            // Update chevron to expanded state
+            const chevron = document.getElementById(`chevron-${tableName}`);
+            const chevronIcon = chevron.querySelector('.chevron-icon');
+            if (chevron) {
+                chevron.classList.add('expanded');
+                chevronIcon.style.transform = 'rotate(90deg)';
+            }
+        }
+
+        function toggleAllTables() {
+            const containers = document.querySelectorAll('.result-container');
+            const expandAllBtn = document.getElementById('expandAllBtn');
+            const hasExpanded = Array.from(containers).some(c => c.classList.contains('expanded'));
+            
+            containers.forEach(container => {
+                if (hasExpanded) {
+                    // Collapse all
+                    container.classList.remove('expanded');
+                } else {
+                    // Expand all
+                    container.classList.add('expanded');
+                }
+            });
+            
+            // Update button text
+            expandAllBtn.textContent = hasExpanded ? '📈 Expand All' : '📉 Collapse All';
+        }
+
+        function checkTableOverflow() {
+            // Check all result containers and show global expand button if needed
+            setTimeout(() => {
+                const containers = document.querySelectorAll('.result-container');
+                let hasOverflow = false;
+                
+                containers.forEach(container => {
+                    const table = container.querySelector('.result-table');
+                    if (table && (table.scrollHeight > container.clientHeight || table.scrollWidth > container.clientWidth)) {
+                        hasOverflow = true;
+                    }
+                });
+                
+                // Show/hide expand all button
+                const expandAllBtn = document.getElementById('expandAllBtn');
+                if (hasOverflow && containers.length > 0) {
+                    expandAllBtn.style.display = 'block';
+                } else {
+                    expandAllBtn.style.display = 'none';
+                }
+            }, 100); // Small delay to ensure DOM is rendered
+        }
+
+        // Attach setupWorkspace to the global window object to ensure accessibility
+        window.setupWorkspace = setupWorkspace;
+
+        // --- Workspace-aware schema + queries prefetch & filtering additions ---
+        // Caches
+    let manifestSchemaCache = null;          // Raw /api/resource-schema
+        let workspaceSchemaCache = null;         // Result from /api/workspace-schema (status=ready)
+        let schemaDataCache = null;              // Active (possibly filtered) schema object used for rendering
+        let schemaExpanded = false;
+        let workspacePollingInterval = null;
+
+        // Prefetch manifest schema & queries as soon as DOM is ready (before user sets workspace)
+        document.addEventListener('DOMContentLoaded', () => {
+            initWorkspaceButtonSizing();
+            prefetchManifestAssets();
+            updateUIElementsState(); // Initialize all UI element states
+        });
+
+        function initWorkspaceButtonSizing(){
+            const btn = document.getElementById('setWorkspaceBtn');
+            if(!btn) return;
+            const labelEl = btn.querySelector('.ws-label');
+            if(!labelEl) return;
+            const originalText = labelEl.textContent;
+            const stateLabels = ['Set workspace','Setting up...','Workspace set'];
+            let maxWidth = 0;
+            // Ensure icon slot participates in measurement
+            const iconSlot = btn.querySelector('.ws-icon-slot');
+            const originalClasses = btn.className;
+            stateLabels.forEach(text => {
+                labelEl.textContent = text;
+                // Simulate widest state (spinner showing + longest text)
+                btn.classList.add('loading');
+                const w = btn.offsetWidth;
+                if(w > maxWidth) maxWidth = w;
+                btn.classList.remove('loading');
+            });
+            // Restore
+            labelEl.textContent = originalText;
+            btn.className = originalClasses;
+            // Apply locked width with small buffer to avoid sub-pixel wrap
+            // Instead of locking explicit width, ensure min-width covers widest state to avoid vertical expansion
+            btn.style.minWidth = (maxWidth + 4) + 'px';
+            btn.dataset.lockedWidth = '1';
+        }
+
+        async function prefetchManifestAssets(){
+            try {
+                const schemaResp = await fetch('/api/resource-schema').then(r=>r.json()).catch(()=>null);
+                if(schemaResp && schemaResp.success){
+                    // Normalize manifest schema shape (flatten nested manifest block)
+                    manifestSchemaCache = normalizeManifestSchema(schemaResp);
+                    if(workspaceSchemaCache){ debugLogSchemaIntersection(); }
+                }
+                if(!schemaDataCache && manifestSchemaCache){
+                    schemaDataCache = manifestSchemaCache;
+                }
+                // Attempt early suggestions (will no-op until workspace schema ready)
+                renderQuickSuggestions();
+            } catch(e){
+                console.warn('Manifest prefetch failed', e);
+            }
+        }
+
+        // Debug helper: log intersection of resource types & tables between manifest (universal) and workspace schemas
+        function debugLogSchemaIntersection(){
+            if(!(manifestSchemaCache && workspaceSchemaCache)) return; // Need both
+            const uni = manifestSchemaCache.resource_type_tables || {};
+            const ws = workspaceSchemaCache.resource_type_tables || {};
+            const uniRts = Object.keys(uni);
+            const wsRts = Object.keys(ws);
+            const rtIntersection = wsRts.filter(r => uniRts.includes(r));
+            const rtOnlyWorkspace = wsRts.filter(r => !uniRts.includes(r));
+            const rtOnlyUniversal = uniRts.filter(r => !wsRts.includes(r));
+            const perRt = {};
+            let totalTableIntersections = 0;
+            rtIntersection.forEach(rt => {
+                const uniTables = Array.isArray(uni[rt]) ? uni[rt] : [];
+                const wsTables = Array.isArray(ws[rt]) ? ws[rt] : [];
+                const tableIntersection = wsTables.filter(t => uniTables.includes(t));
+                totalTableIntersections += tableIntersection.length;
+                perRt[rt] = {
+                    workspaceTablesCount: wsTables.length,
+                    universalTablesCount: uniTables.length,
+                    intersectionCount: tableIntersection.length,
+                    intersectionTables: tableIntersection.slice(0, 30) // cap to avoid huge logs
+                };
+            });
+            console.log('[SchemaIntersection] Summary', {
+                workspaceResourceTypes: wsRts.length,
+                universalResourceTypes: uniRts.length,
+                intersectionResourceTypes: rtIntersection.length,
+                totalTableIntersections,
+                resourceTypesOnlyInWorkspace: rtOnlyWorkspace.slice(0,50),
+                resourceTypesOnlyInUniversal: rtOnlyUniversal.slice(0,50)
+            });
+            console.log('[SchemaIntersection] Per Resource Type (capped)', perRt);
+        }
+
+        function renderQuickSuggestions(){
+            const container = document.getElementById('quickSuggestions');
+            const wrapper = document.getElementById('suggestionsContainer');
+            if(!container) return;
+            container.innerHTML = '';
+            const wsQueries = (workspaceSchemaCache && workspaceSchemaCache.table_queries) || {};
+            const debugInfo = { source:'workspaceOnly', tables:Object.keys(wsQueries).length };
+            if(!Object.keys(wsQueries).length){
+                // Always show the suggestions container for the "More Suggestions" button
+                if(wrapper){ wrapper.style.display = 'block'; }
+                console.log('[QuickSuggestions]', { ...debugInfo, poolSize:0, picks:[] });
+                return;
+            }
+            const pool = [];
+            Object.values(wsQueries).forEach(qlist => {
+                if(!Array.isArray(qlist)) return;
+                qlist.forEach(q => {
+                    // Prefer explicit prompt if present; fallback to legacy name
+                    const label = (q.prompt || q.name || q.description || '').trim();
+                    if(!label) return;
+                    pool.push({label, weight: q.code ? 1.2 : 1});
+                });
+            });
+            if(!pool.length){ if(wrapper){ wrapper.style.display = 'none'; } console.log('[QuickSuggestions]', { ...debugInfo, poolSize:0, picks:[] }); return; }
+            pool.sort((a,b)=> b.weight - a.weight);
+            const seen = new Set();
+            const picks = [];
+            for(const item of pool){
+                const k = item.label.toLowerCase();
+                if(seen.has(k)) continue;
+                seen.add(k);
+                picks.push(item.label);
+                if(picks.length >= 3) break;
+            }
+            container.innerHTML = picks.map(text => `<div class=\"suggestion-pill\" data-question=\"${encodeHtmlAttribute(text)}\">${escapeHtml(text)}</div>`).join('');
+            // Always show the wrapper since it contains the "More Suggestions" button
+            if(wrapper){ wrapper.style.display = 'block'; }
+            console.log('[QuickSuggestions]', { ...debugInfo, poolSize: pool.length, picks });
+        }
+
+        // Removed buildGlobalQueryFallback: /api/resource-queries retired.
+
+        function showWorkspaceLoading(message){ /* no-op: status panel hidden */ }
+
+        function clearWorkspaceLoading(successMsg){ /* no-op: status panel hidden */ }
+
+        // Encode attribute values to avoid breaking HTML when using data-question
+        function encodeHtmlAttribute(str){
+            if(str==null) return '';
+            return String(str)
+                .replace(/&/g,'&amp;')
+                .replace(/"/g,'&quot;')
+                .replace(/</g,'&lt;')
+                .replace(/>/g,'&gt;');
+        }
+
+        // Delegate click handling for suggestion pills
+        document.addEventListener('click', function(e){
+            const pill = e.target.closest('.suggestion-pill');
+            if(!pill || pill.classList.contains('disabled')) return;
+            const q = pill.getAttribute('data-question');
+            if(q){
+                setQuestion(q);
+            }
+        });
+          function showResult(result, timestamp) {
+    const resultContent = document.getElementById('resultContent');
+    const timestampElement = document.getElementById('timestamp');
+    const resultsSection = document.getElementById('resultsSection');
+    const kqlQueryElement = document.getElementById('kqlQuery');
+
+    // Hide loading indicator
+    hideLoading();
+
+    // Reset the Go button
+    resetGoButton();
+
+    // Make sure the results section is visible
+    resultsSection.classList.add('visible');
+    resultsSection.style.display = 'block';
+
+    // Store current result for explain feature
+    currentQueryResult = result;
+
+    if (result.type === 'query_success') {
+        // Show the generated KQL query in the new section
+        kqlQueryElement.textContent = result.kql_query;
+
+        // Show the data tables
+        if (result.data && result.data.type === 'table_data') {
+            const tables = result.data.tables;
+            if (tables && tables.length > 0) {
+                let html = '';
+                tables.forEach(table => {
+                    html += createTableHTML(table);
+                });
+                resultContent.innerHTML = html;
+
+                // Show explain section for successful queries with data
+                showExplainSection();
+            } else {
+                resultContent.innerHTML = `<div class="no-data-message">No data returned from query</div>`;
+                hideExplainSection();
+            }
+        } else if (result.data && result.data.type === 'no_data') {
+            resultContent.innerHTML = `<div class="no-data-message">${result.data.message}</div>`;
+            hideExplainSection();
+        }
+    } else if (result.type === 'query_error') {
+        resultContent.innerHTML = `<div class="error">❌ Error: ${result.error}</div>`;
+        hideExplainSection();
+    } else {
+        resultContent.innerHTML = `<pre style="white-space: pre-wrap;">${JSON.stringify(result, null, 2)}</pre>`;
+        hideExplainSection();
+    }
+
+    timestampElement.textContent = `Response received at: ${timestamp}`;
+    
+    // Check if tables need expansion controls
+    checkTableOverflow();
+    
+    // Auto-scroll to results section after query completion
+    setTimeout(() => {
+        const resultsSection = document.getElementById('resultsSection');
+        console.log('Auto-scrolling to results section:', resultsSection); // Debug log
+        if (resultsSection) {
+            // Try multiple scroll approaches for better compatibility
+            try {
+                resultsSection.scrollIntoView({ 
+                    behavior: 'smooth', 
+                    block: 'start' 
+                });
+                console.log('Scroll initiated with scrollIntoView'); // Debug log
+            } catch (e) {
+                // Fallback for browsers that don't support smooth scrolling
+                resultsSection.scrollIntoView(true);
+                console.log('Fallback scroll used'); // Debug log
+            }
+            
+            // Additional fallback - scroll to a specific position
+            const rect = resultsSection.getBoundingClientRect();
+            if (rect.top > window.innerHeight || rect.top < 0) {
+                window.scrollTo({
+                    top: window.pageYOffset + rect.top - 20,
+                    behavior: 'smooth'
+                });
+                console.log('Additional fallback scroll used'); // Debug log
+            }
+        }
+    }, 300); // Further increased delay to account for the 500ms delay in enhancedAskQuestion
+}
+
+function createTableHTML(table) {
+    let html = '';
+    const tableId = `table-${Math.random().toString(36).substr(2, 9)}`;
+    
+    // Table header with info
+    html += `<div class="table-header">`;
+    html += `<div class="table-title">📊 Table ${table.table_number || 1}</div>`;
+    html += `<div class="table-info">${table.row_count} rows</div>`;
+    html += `</div>`;
+    
+    if (table.has_data && table.columns && table.rows) {
+        html += `<div class="result-container" id="${tableId}">`;
+        html += `<table class="result-table">`;
+        
+        // Table header
+        html += `<thead><tr>`;
+        table.columns.forEach(column => {
+            html += `<th>${escapeHtml(column)}</th>`;
+        });
+        html += `</tr></thead>`;
+        
+        // Table body
+        html += `<tbody>`;
+        table.rows.forEach(row => {
+            html += `<tr>`;
+            row.forEach((cell, index) => {
+                const cellValue = cell === null || cell === undefined ? 'NULL' : String(cell);
+                const cellClass = getCellClass(cell);
+                html += `<td class="${cellClass}">${escapeHtml(cellValue)}</td>`;
+            });
+            html += `</tr>`;
+        });
+        html += `</tbody>`;
+        
+        html += `</table>`;
+        html += `</div>`;
+        
+        // Add table statistics
+        if (table.has_data) {
+            html += `<div class="table-stats">`;
+            html += `📊 ${table.columns.length} columns • ${table.row_count} rows`;
+            if (table.row_count !== table.rows.length) {
+                html += ` • Showing ${table.rows.length} of ${table.row_count}`;
+            }
+            html += `</div>`;
+        }
+    } else {
+        html += `<div class="no-data-message">No data in this table</div>`;
+    }
+    
+    return html;
+}
+        
+function createExplainSection() {
+    return `
+        <div class="explain-section">
+            <button class="btn-explain" onclick="explainResults()" id="explainBtn">
+                🧠 Explain Results
+            </button>
+            <div id="explainContent"></div>
+        </div>
+    `;
+}
+
+function showExplainSection() {
+    const explainSection = document.getElementById('explainResultsSection');
+    const explainContent = document.getElementById('explainContent');
+    
+    // Clear any previous content
+    explainContent.innerHTML = '';
+    
+    // Show the explain section
+    explainSection.style.display = 'block';
+}
+
+function hideExplainSection() {
+    const explainSection = document.getElementById('explainResultsSection');
+    if (explainSection) {
+        explainSection.style.display = 'none';
+    }
+}
+
+async function explainResults() {
+    const explainBtn = document.getElementById('explainBtn');
+    const explainContent = document.getElementById('explainContent');
+    
+    // Check if we have current results to explain
+    if (!currentQueryResult || currentQueryResult.type !== 'query_success') {
+        explainContent.innerHTML = `<div class="explain-result"><h4>❌ No Results to Explain</h4><p>Please run a successful query first.</p></div>`;
+        return;
+    }
+    
+    // Disable button and show loading
+    explainBtn.disabled = true;
+    explainContent.innerHTML = `
+        <div class="explain-loading">
+            <div class="explain-spinner"></div>
+            Analyzing query results with AI...
+        </div>
+    `;
+    
+    try {
+        // Make API call to explain endpoint
+        const response = await fetch('/api/explain', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                query_result: currentQueryResult,
+                original_question: currentOriginalQuestion
+            })
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            explainContent.innerHTML = `
+                <div class="explain-result">
+                    <h4>🧠 AI Analysis</h4>
+                    <p>${data.explanation.replace(/\n/g, '<br>')}</p>
+                    <small style="color: #666;">Analysis generated at: ${data.timestamp}</small>
+                </div>
+            `;
+        } else {
+            explainContent.innerHTML = `
+                <div class="explain-result">
+                    <h4>❌ Explanation Failed</h4>
+                    <p>${data.error}</p>
+                </div>
+            `;
+        }
+        
+    } catch (error) {
+        explainContent.innerHTML = `
+            <div class="explain-result">
+                <h4>❌ Error</h4>
+                <p>Failed to explain results: ${error.message}</p>
+            </div>
+        `;            } finally {
+        // Re-enable the button
+        explainBtn.disabled = false;
+    }
+}
+
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+
+function showError(error) {
+    const resultContent = document.getElementById('resultContent');
+    const timestampElement = document.getElementById('timestamp');
+    const resultsSection = document.getElementById('resultsSection');
+    
+    // Hide loading indicator
+    hideLoading();
+    
+    // Reset the Go button
+    resetGoButton();
+    
+    // Make sure the results section is visible
+    resultsSection.classList.add('visible');
+    resultsSection.style.display = 'block';
+    
+    resultContent.innerHTML = `<div class="error">❌ Error: ${error}</div>`;
+    timestampElement.textContent = `Error occurred at: ${new Date().toLocaleString()}`;
+    
+    // Hide explain section when showing errors
+    hideExplainSection();
+    
+    // Auto-scroll to results section after error
+    setTimeout(() => {
+        const resultsSection = document.getElementById('resultsSection');
+        if (resultsSection) {
+            // Try multiple scroll approaches for better compatibility
+            try {
+                resultsSection.scrollIntoView({ 
+                    behavior: 'smooth', 
+                    block: 'start' 
+                });
+            } catch (e) {
+                // Fallback for browsers that don't support smooth scrolling
+                resultsSection.scrollIntoView(true);
+            }
+            
+            // Additional fallback - scroll to a specific position
+            const rect = resultsSection.getBoundingClientRect();
+            if (rect.top > window.innerHeight || rect.top < 0) {
+                window.scrollTo({
+                    top: window.pageYOffset + rect.top - 20,
+                    behavior: 'smooth'
+                });
+            }
+        }
+    }, 200); // Increased delay to ensure content is rendered
+}
+
+async function setupWorkspace() {
+    console.log('setupWorkspace called!'); // Debug log
+    const workspaceId = document.getElementById('workspaceId').value.trim();
+
+    if (!workspaceId) {
+        alert('Please enter a workspace ID');
+        return;
+    }
+
+    // Get button and show comprehensive loading state
+    const btn = document.getElementById('setWorkspaceBtn');
+    if (btn) {
+        btn.disabled = true;
+        btn.classList.add('loading');
+        btn.style.opacity = '0.8';
+        btn.style.cursor = 'not-allowed';
+        const label = btn.querySelector('.ws-label');
+        if (label) {
+            label.textContent = 'Connecting...';
+        }
+        
+        // Show a subtle loading message near the button
+        const setupStatus = document.getElementById('setupStatus');
+        if (setupStatus) {
+            setupStatus.innerHTML = `
+                <div style="margin-top: 10px; padding: 8px 12px; background: #e3f2fd; border: 1px solid #90caf9; border-radius: 6px; color: #1565c0; font-size: 0.9rem; display: flex; align-items: center; gap: 8px;">
+                    <div class="spinner" style="width: 16px; height: 16px; border: 2px solid #90caf9; border-top: 2px solid #1565c0; margin: 0;"></div>
+                    <span>🔄 Connecting to workspace and discovering tables...</span>
+                </div>
+            `;
+            setupStatus.style.display = 'block';
+        }
+    }
+
+    // Disable schema button until setup and polling are complete
+    const schemaBtn = document.getElementById('showSchemaBtn');
+    if(schemaBtn){
+        schemaBtn.disabled = true;
+        schemaBtn.classList.add('disabled');
+        schemaBtn.onclick = null;
+        schemaBtn.title = 'Workspace setup in progress...';
+    }
+
+    try {
+        console.log('Making API call to /api/setup with workspace:', workspaceId); // Debug log
+        const response = await fetch('/api/setup', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ workspace_id: workspaceId })
+        });
+
+        const data = await response.json();
+        console.log('API response:', data); // Debug log
+
+        if (data.success) {
+            console.log('Setup successful, starting schema polling'); // Debug log
+            // Don't call updateStatus(true) yet - wait for schema polling to complete
+            // The schema polling function will handle enabling UI elements when ready
+            
+            // Start polling workspace schema instead of test-connection
+            startWorkspaceSchemaPolling();
+        } else {
+            console.error('Setup failed:', data.error); // Debug log
+            alert('Setup failed: ' + data.error);
+            updateStatus(false, data.error);
+            // Re-enable button on error
+            if (btn) {
+                btn.disabled = false;
+                btn.classList.remove('loading');
+                const label = btn.querySelector('.ws-label');
+                if (label) {
+                    label.textContent = 'Set workspace';
+                }
+            }
+            // Re-enable schema button on error
+            const schemaBtn = document.getElementById('showSchemaBtn');
+            if(schemaBtn){
+                schemaBtn.disabled = false;
+                schemaBtn.classList.remove('disabled');
+                schemaBtn.onclick = toggleSchema;
+                schemaBtn.title = 'Show workspace schema and available tables';
+            }
+        }
+    } catch (error) {
+        console.error('Network error:', error); // Debug log
+        alert('Connection failed: ' + error.message);
+        updateStatus(false, `Connection failed: ${error.message}`);
+        // Re-enable button on error
+        if (btn) {
+            btn.disabled = false;
+            btn.classList.remove('loading');
+            const label = btn.querySelector('.ws-label');
+            if (label) {
+                label.textContent = 'Set workspace';
+            }
+        }
+        // Re-enable schema button on error
+        const schemaBtn = document.getElementById('showSchemaBtn');
+        if(schemaBtn){
+            schemaBtn.disabled = false;
+            schemaBtn.classList.remove('disabled');
+            schemaBtn.onclick = toggleSchema;
+            schemaBtn.title = 'Show workspace schema and available tables';
+        }
+    }
+}
+
+async function testConnection() {
+    if (!isConnected) {
+        updateStatus(false, 'Please setup workspace first');
+        return;
+    }
+
+    showLoading();
+
+    try {
+        const response = await fetch('/api/test-connection', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' }
+        });
+
+        const data = await response.json();
+        
+        if (data.success) {
+            showResult(data.result, data.timestamp);
+        } else {
+            showError(data.error);
+        }
+    } catch (error) {
+        showError(`Connection test failed: ${error.message}`);
+    }
+    
+}
+
+async function askQuestion() {
+    const question = document.getElementById('questionInput').value.trim();
+    
+    if (!question) {
+        showError('Please enter a question');
+        return;
+    }
+
+    if (!isConnected) {
+        showError('Please setup workspace first');
+        return;
+    }
+
+    // Show initial loading
+    showLoading('🚀 Starting query process...');
+    
+    // Simulate progress steps
+    setTimeout(() => updateLoadingStep('step-translate', 'active'), 200);
+    
+    try {
+        const response = await fetch('/api/query', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ question: question })
+        });
+
+        // Show validation step
+        updateLoadingStep('step-translate', 'completed');
+        updateLoadingStep('step-validate', 'active');
+        
+        const data = await response.json();
+        
+        // Show execution step
+        updateLoadingStep('step-validate', 'completed');
+        updateLoadingStep('step-execute', 'active');
+        
+        // Small delay to show execution step
+        await new Promise(resolve => setTimeout(resolve, 500));
+        
+        // Show formatting step
+        updateLoadingStep('step-execute', 'completed');
+        updateLoadingStep('step-format', 'active');
+        
+        // Small delay to show formatting step
+        await new Promise(resolve => setTimeout(resolve, 300));
+        
+        if (data.success) {
+            updateLoadingStep('step-format', 'completed');
+            showResult(data.result, data.timestamp);
+        } else {
+            showError(data.error);
+        }
+    } catch (error) {
+        showError(`Query failed: ${error.message}`);
+    }
+}
+
+function simulateRetry() {
+    // Show retry indication
+    updateLoadingStep('step-translate', 'retry');
+      setTimeout(() => {
+        updateLoadingStep('step-translate', 'completed');
+        updateLoadingStep('step-validate', 'active');
+    }, 1500);
+}
+
+function enhancedAskQuestion() {
+    // Check if workspace is connected first
+    if (!isConnected) {
+        console.log('Workspace not connected, ignoring request');
+        return;
+    }
+    
+    const question = document.getElementById('questionInput').value.trim();
+    
+    // Enhanced button loading state with spinner - do this FIRST
+    const goButton = document.querySelector('.floating-go-btn');
+    if (goButton) {
+        goButton.disabled = true;
+        goButton.innerHTML = '<div class="button-spinner"></div> Processing...';
+        goButton.style.opacity = '0.8';
+        goButton.style.background = 'linear-gradient(135deg, #6c757d 0%, #495057 100%)';
+        goButton.style.cursor = 'not-allowed';
+    }
+
+    // Show the nice loading in results pane immediately
+    showLoading('🚀 Preparing to process your question...');
+    
+    // Scroll to results section immediately when loading starts
+    setTimeout(() => {
+        const resultsSection = document.getElementById('resultsSection');
+        console.log('Immediate scroll to results section on Go click'); // Debug
+        if (resultsSection) {
+            resultsSection.scrollIntoView({ 
+                behavior: 'smooth', 
+                block: 'start' 
+            });
+        }
+    }, 200); // Small delay to ensure showLoading has rendered
+    
+    // Now do validation checks and show errors in the loading area if needed
+    if (!question) {
+        setTimeout(() => {
+            showError('Please enter a question');
+        }, 500);
+        return;
+    }
+
+    if (!isConnected) {
+        setTimeout(() => {
+            showError('Please setup workspace first');
+        }, 500);
+        return;
+    }
+
+    // Store the original question for explain feature
+    currentOriginalQuestion = question;
+    
+    // Start with translation step
+    setTimeout(() => {
+        updateLoadingStep('step-translate', 'active');
+        processQuestionWithRetry(question);
+    }, 300);
+}
+
+async function processQuestionWithRetry(question) {
+    let retryCount = 0;
+    const maxRetries = 2;
+    const startTime = Date.now();
+    
+    // Initialize progress
+    updateProgress(10, '🔄 Starting translation process...');
+    
+    while (retryCount <= maxRetries) {
+        try {
+            if (retryCount > 0) {
+                // Show retry indication
+                updateProgress(15 + (retryCount * 5), `🔄 Retry attempt ${retryCount}...`);
+                updateLoadingStep('step-translate', 'retry');
+                await new Promise(resolve => setTimeout(resolve, 1000));
+            }
+            
+            // Translation phase
+            updateProgress(25, '🔄 Translating to KQL...');
+            updateLoadingStep('step-translate', 'active');
+            
+            // Simulate translation time
+            await new Promise(resolve => setTimeout(resolve, 800 + (retryCount * 500)));
+            
+            // Make the actual API call
+            updateProgress(40, '📡 Sending request to server...');
+            const response = await fetch('/api/query', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ question: question })
+            });
+
+            // Validation phase
+            updateProgress(60, '✅ Validating generated query...');
+            updateLoadingStep('step-translate', 'completed');
+            updateLoadingStep('step-validate', 'active');
+            await new Promise(resolve => setTimeout(resolve, 400));
+            
+            const data = await response.json();
+            
+            // Check if we need to retry (simulate retry logic)
+            if (!data.success && retryCount < maxRetries && data.error.includes('translation')) {
+                retryCount++;
+                updateLoadingStep('step-validate', 'retry');
+                continue;
+            }
+            
+            // Execution phase
+            updateProgress(80, '⚡ Executing query on Azure...');
+            updateLoadingStep('step-validate', 'completed');
+            updateLoadingStep('step-execute', 'active');
+            await new Promise(resolve => setTimeout(resolve, 600));
+            
+            // Formatting phase
+            updateProgress(95, '📊 Formatting results...');
+            updateLoadingStep('step-execute', 'completed');
+            updateLoadingStep('step-format', 'active');
+            await new Promise(resolve => setTimeout(resolve, 300));
+            
+            // Complete
+            updateProgress(100, '✅ Complete!');
+            
+            if (data.success) {
+                updateLoadingStep('step-format', 'completed');
+                const totalTime = ((Date.now() - startTime) / 1000).toFixed(1);
+                
+                // Show completion with stats
+                setTimeout(() => {
+                    showResult(data.result, data.timestamp);
+                    
+                    // Auto-scroll to results after showing them
+                    setTimeout(() => {
+                        const resultsSection = document.getElementById('resultsSection');
+                        console.log('Scrolling to results section after showResult'); // Debug
+                        if (resultsSection) {
+                            resultsSection.scrollIntoView({ 
+                                behavior: 'smooth', 
+                                block: 'start' 
+                            });
+                        }
+                    }, 100); // Short delay after showResult completes
+                }, 500);
+            } else {
+                showError(data.error);
+                
+                // Auto-scroll to error results
+                setTimeout(() => {
+                    const resultsSection = document.getElementById('resultsSection');
+                    console.log('Scrolling to results section after showError'); // Debug
+                    if (resultsSection) {
+                        resultsSection.scrollIntoView({ 
+                            behavior: 'smooth', 
+                            block: 'start' 
+                        });
+                    }
+                }, 100);
+            }
+            break;
+            
+        } catch (error) {
+            if (retryCount < maxRetries) {
+                retryCount++;
+                updateProgress(20 + (retryCount * 5), `🔄 Retrying... (${retryCount}/${maxRetries})`);
+                updateLoadingStep('step-translate', 'retry');
+                continue;
+            } else {
+                showError(`Query failed after ${maxRetries + 1} attempts: ${error.message}`);
+                
+                // Auto-scroll to error results
+                setTimeout(() => {
+                    const resultsSection = document.getElementById('resultsSection');
+                    console.log('Scrolling to results section after catch error'); // Debug
+                    if (resultsSection) {
+                        resultsSection.scrollIntoView({ 
+                            behavior: 'smooth', 
+                            block: 'start' 
+                        });
+                    }
+                }, 100);
+                break;
+            }
+        }
+    }
+}
+
+        // Category example suggestion functions removed - examples now used internally for AI translation only
+        
+        function setQuestion(question) {
+            document.getElementById('questionInput').value = question;
+            
+            // Scroll back to the question input area
+            const questionSection = document.querySelector('.query-section');
+            if (questionSection) {
+                questionSection.scrollIntoView({ 
+                    behavior: 'smooth', 
+                    block: 'start' 
+                });
+            }
+        }
+
+        // Workspace examples and schema functions
+        function buildFilteredSchema(manifest, workspace) {
+            // Only include resource types that actually have >=1 table mapped for this workspace
+            let wsRtTables = workspace.resource_type_tables || {};
+
+            // If workspace response (e.g. from /api/resource-schema) did not include resource_type_tables,
+            // reconstruct mapping from workspace.tables + their manifest_resource_types.
+            if (!Object.keys(wsRtTables).length && Array.isArray(workspace.tables)) {
+                const rebuilt = {};
+                workspace.tables.forEach(t => {
+                    const tname = t.name;
+                    const rts = Array.isArray(t.manifest_resource_types) ? t.manifest_resource_types : [];
+                    rts.forEach(rt => {
+                        if (!rt || rt.toLowerCase() === 'unknown') return; // skip unknown placeholder
+                        (rebuilt[rt] = rebuilt[rt] || []).push(tname);
+                    });
+                });
+                wsRtTables = rebuilt;
+            }
+            const wsRts = Object.keys(wsRtTables).filter(rt => Array.isArray(wsRtTables[rt]) && wsRtTables[rt].length > 0);
+            // No fallback to manifest resource types; if none yet, we return empty and UI will show message
+            const effectiveRts = wsRts;
+            const filtered = {
+                resource_types: effectiveRts,
+                providers: [...new Set(effectiveRts.map(rt => rt.split('/')[0]))],
+                // Filter mapping to only those RTs we kept
+                resource_type_tables: effectiveRts.reduce((acc, rt) => { acc[rt] = wsRtTables[rt]; return acc; }, {}),
+                table_metadata: {},
+                table_queries: workspace.table_queries || {},
+                counts: workspace.counts || {}
+            };
+            // Include manifest metadata for matched tables
+            const manifestMeta = manifest.table_metadata || {};
+            effectiveRts.forEach(rt => {
+                (wsRtTables[rt] || []).forEach(table => {
+                    if (manifestMeta[table]) {
+                        filtered.table_metadata[table] = manifestMeta[table];
+                    }
+                });
+            });
+            return filtered;
+        }
+
+        function buildWorkspaceOnlySchema(workspace) {
+            const rtTablesRaw = workspace.resource_type_tables || {};
+            // Keep only RTs with at least one table
+            const rts = Object.keys(rtTablesRaw).filter(rt => Array.isArray(rtTablesRaw[rt]) && rtTablesRaw[rt].length > 0);
+            const rtTables = rts.reduce((acc, rt) => { acc[rt] = rtTablesRaw[rt]; return acc; }, {});
+            return {
+                resource_types: rts,
+                providers: [...new Set(rts.map(rt => rt.split('/')[0]))],
+                resource_type_tables: rtTables,
+                table_metadata: workspace.table_metadata || {},
+                table_queries: workspace.table_queries || {},
+                counts: workspace.counts || {}
+            };
+        }
+
+        function toggleSchema() {
+            const container = document.getElementById('schemaTreeContainer');
+            const btn = document.getElementById('showSchemaBtn');
+            const search = document.getElementById('schemaSearch');
+            
+            if (container.style.display === 'block') {
+                container.style.display = 'none';
+                btn.setAttribute('aria-expanded', 'false');
+                search.disabled = true;
+            } else {
+                container.style.display = 'block';
+                btn.setAttribute('aria-expanded', 'true');
+                search.disabled = false;
+                renderSchemaTree();
+                setTimeout(() => search.focus(), 100);
+            }
+        }
+
+        function renderSchemaTree() {
+            const tree = document.getElementById('schemaTree');
+            const stats = document.getElementById('schemaStats');
+            if (!tree || !schemaDataCache) return;
+            // Support both flattened and original shapes, but only keep RTs with >=1 table
+            const allResourceTypes = (schemaDataCache.resource_types && schemaDataCache.resource_types.length)
+                ? schemaDataCache.resource_types
+                : (Object.keys(schemaDataCache.resource_type_tables || {}) || []);
+            const rtTables = schemaDataCache.resource_type_tables || {};
+            const resourceTypes = allResourceTypes.filter(rt => Array.isArray(rtTables[rt]) && rtTables[rt].length > 0);
+            const providersRaw = schemaDataCache.providers;
+            // Derive providers only from kept resource types
+            const providers = [...new Set(resourceTypes.map(rt => rt.split('/')[0]))];
+            
+            if (stats) {
+                stats.innerHTML = `${resourceTypes.length} types, ${providers.length} providers`;
+                stats.style.display = resourceTypes.length > 0 ? 'inline-block' : 'none';
+            }
+            
+            // Explicit error state: workspace has tables but none mapped to resource types
+            const workspaceHasTables = !!(workspaceSchemaCache && Array.isArray(workspaceSchemaCache.tables) && workspaceSchemaCache.tables.length);
+            if (resourceTypes.length === 0) {
+                if (workspaceHasTables) {
+                    tree.innerHTML = '<li class="schema-empty" style="color:#d9534f;font-weight:600;">⚠ Workspace tables discovered (' + workspaceSchemaCache.tables.length + ') but no resource type mappings found. This indicates manifest mapping did not match any tables. Try refreshing manifests or inspect enrichment logic.</li>';
+                } else {
+                    tree.innerHTML = '<li class="schema-empty">No schema data available yet. Connect a workspace and wait for discovery to complete.</li>';
+                }
+                return;
+            }
+            
+            const grouped = {};
+            resourceTypes.forEach(rt => {
+                const provider = rt.split('/')[0];
+                if (!grouped[provider]) grouped[provider] = [];
+                grouped[provider].push(rt);
+            });
+            
+            let html = '';
+            Object.keys(grouped).sort().forEach(provider => {
+                html += `<li class="schema-group">`;
+                html += `<div class="schema-provider">${provider} <span class="schema-badge">${grouped[provider].length}</span></div>`;
+                grouped[provider].sort().forEach(rt => {
+                    const tables = rtTables[rt] || [];
+                    html += `<div class="schema-resource-type" onclick="toggleResourceType('${rt}')">`;
+                    html += `${rt} <span class="schema-badge">${tables.length}</span>`;
+                    html += `</div>`;
+                    html += `<div class="schema-table-list" id="tables-${rt.replace(/[^a-zA-Z0-9]/g, '_')}" style="display:none;">`;
+                    tables.forEach(table => {
+                        html += `<span class="schema-table" onclick="setQuestion('Show me data from ${table}')">${table}</span>`;
+                    });
+                    html += `</div>`;
+                });
+                html += `</li>`;
+            });
+            
+            tree.innerHTML = html;
+        }
+
+        // Normalization helper to flatten /api/resource-schema payloads
+        function normalizeManifestSchema(resp){
+            if(!resp) return resp;
+            if(resp.manifest){
+                const m = resp.manifest;
+                return {
+                    resource_types: m.resource_types || Object.keys(m.resource_type_tables || {}),
+                    providers: m.providers || [],
+                    resource_type_tables: m.resource_type_tables || {},
+                    table_metadata: m.table_metadata || {},
+                    table_queries: m.table_queries || {},
+                    counts: m.counts || {},
+                    fetched_at: m.fetched_at,
+                    manifests_scanned: m.manifests_scanned
+                };
+            }
+            return resp;
+        }
+
+        function toggleResourceType(resourceType) {
+            const id = `tables-${resourceType.replace(/[^a-zA-Z0-9]/g, '_')}`;
+            const container = document.getElementById(id);
+            if (container) {
+                container.style.display = container.style.display === 'block' ? 'none' : 'block';
+            }
+        }
+
+        function filterSchema() {
+            const search = document.getElementById('schemaSearch');
+            const tree = document.getElementById('schemaTree');
+            if (!search || !tree) return;
+            
+            const query = search.value.toLowerCase();
+            const items = tree.querySelectorAll('.schema-resource-type, .schema-table');
+            
+            items.forEach(item => {
+                const text = item.textContent.toLowerCase();
+                const parent = item.closest('.schema-group');
+                if (text.includes(query)) {
+                    item.style.display = '';
+                    if (parent) parent.style.display = '';
+                } else {
+                    item.style.display = 'none';
+                }
+            });
+            
+            // Hide empty groups
+            const groups = tree.querySelectorAll('.schema-group');
+            groups.forEach(group => {
+                const visibleItems = group.querySelectorAll('.schema-resource-type:not([style*="display: none"])');
+                group.style.display = visibleItems.length > 0 ? '' : 'none';
+            });
+        }
+
+        // Initialize UI when page loads
+        document.addEventListener('DOMContentLoaded', function() {
+            updateUIElementsState();
+        });
+
+    </script>
+</body>
+</html>
