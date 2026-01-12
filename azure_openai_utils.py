@@ -104,11 +104,28 @@ def _is_o_model(deployment: str) -> bool:
     d = deployment.lower()
     return d == "o1" or d == "o4" or d.startswith("o1-") or d.startswith("o4-")
 
-def build_payload(messages: list[Dict[str, str]], *, is_o_model: bool, max_output_tokens: int = 500, temperature: float | None = 0.3, top_p: float | None = 0.9) -> Dict[str, Any]:
+def _supports_max_tokens(deployment: str) -> bool:
+    """Return False for models that don't support max_tokens parameter."""
+    if not deployment:
+        return True
+    d = deployment.lower()
+    # gpt-5.2-chat and similar preview models don't support max_tokens
+    return not (d.startswith("gpt-5") or "gpt-5.2" in d)
+
+def _supports_temperature(deployment: str) -> bool:
+    """Return False for models that don't support custom temperature parameter."""
+    if not deployment:
+        return True
+    d = deployment.lower()
+    # gpt-5.2-chat and similar preview models only support default temperature (1)
+    return not (d.startswith("gpt-5") or "gpt-5.2" in d)
+
+def build_payload(messages: list[Dict[str, str]], *, is_o_model: bool, max_output_tokens: int = 500, temperature: float | None = 0.3, top_p: float | None = 0.9, supports_max_tokens: bool = True, supports_temperature: bool = True) -> Dict[str, Any]:
     """Return a properly shaped payload for Azure OpenAI Chat Completions.
 
     For o-models (o1, o4 families) only user messages are supported and use max_completion_tokens.
     For standard models we support temperature, top_p, etc.
+    Some models (like gpt-5.2-chat) don't support max_tokens parameter at all.
     """
     if is_o_model:
         # Combine messages into a single user message
@@ -121,13 +138,17 @@ def build_payload(messages: list[Dict[str, str]], *, is_o_model: bool, max_outpu
         }
     # Standard model
     payload: Dict[str, Any] = {
-        "messages": messages,
-        "max_tokens": max_output_tokens
+        "messages": messages
     }
-    if temperature is not None:
-        payload["temperature"] = temperature
-    if top_p is not None:
-        payload["top_p"] = top_p
+    # Only add max_tokens if the model supports it
+    if supports_max_tokens:
+        payload["max_tokens"] = max_output_tokens
+    # Only add temperature and top_p if the model supports them
+    if supports_temperature:
+        if temperature is not None:
+            payload["temperature"] = temperature
+        if top_p is not None:
+            payload["top_p"] = top_p
     return payload
 
 def mask_key(k: str | None) -> str:
@@ -182,6 +203,7 @@ def build_chat_request(
     messages: List[Dict[str, str]],
     *,
     is_o_model: bool,
+    deployment: str = "",
     max_tokens: Optional[int] = None,
     temperature: Optional[float] = None,
     top_p: Optional[float] = None,
@@ -193,12 +215,14 @@ def build_chat_request(
     # Default increased from 500 -> 1000 to allow more reasoning/output without requiring env override.
     env_max = get_env_int("AZURE_OPENAI_MAX_OUTPUT_TOKENS", 2000, min_value=50, max_value=4000)
     out_tokens = max_tokens if max_tokens is not None else env_max
+    supports_max_tokens = _supports_max_tokens(deployment)
+    supports_temperature = _supports_temperature(deployment)
     if is_o_model:
-        return build_payload(messages, is_o_model=True, max_output_tokens=out_tokens)
+        return build_payload(messages, is_o_model=True, max_output_tokens=out_tokens, supports_max_tokens=supports_max_tokens, supports_temperature=supports_temperature)
     base_temp_default = float(os.environ.get("AZURE_OPENAI_TRANSLATE_BASE_TEMP", "0.1"))
     eff_temp = base_temp_default if temperature is None else temperature
     eff_top_p = 0.9 if top_p is None else top_p
-    return build_payload(messages, is_o_model=False, max_output_tokens=out_tokens, temperature=eff_temp, top_p=eff_top_p)
+    return build_payload(messages, is_o_model=False, max_output_tokens=out_tokens, temperature=eff_temp, top_p=eff_top_p, supports_max_tokens=supports_max_tokens, supports_temperature=supports_temperature)
 
 
 def chat_completion(cfg: AzureOpenAIConfig, payload: Dict[str, Any], *, max_retries: int = 3, base_delay: float = 1.0, timeout: int = 30, debug_prefix: str = "Chat") -> Tuple[Optional[str], Optional[str], Optional[Dict[str, Any]], Optional[str]]:
@@ -485,7 +509,8 @@ def run_chat(
     if not cfg:
         return ChatResult(content=None, finish_reason=None, error="Missing configuration", raw=None, attempts=0, escalated=False, metadata={"purpose": purpose})
 
-    is_o = _is_o_model(cfg.deployment)
+    deployment = cfg.deployment
+    is_o = _is_o_model(deployment)
     initial_tokens = max_tokens
     if initial_tokens is None:
         # Mirror logic inside build_chat_request (updated default 1000)
@@ -514,6 +539,7 @@ def run_chat(
         payload = build_chat_request(
             messages,
             is_o_model=is_o,
+            deployment=deployment,
             max_tokens=current_tokens,
             temperature=current_temperature,
             top_p=top_p,

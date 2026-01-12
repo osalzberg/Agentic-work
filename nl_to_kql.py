@@ -10,13 +10,42 @@ import re
 from typing import List, Optional, Dict, Tuple
 from datetime import datetime
 
-from prompt_builder import build_prompt, stable_hash  # type: ignore
+from prompt_builder import build_prompt, stable_hash, SYSTEM_PROMPT  # type: ignore
 
 from azure_openai_utils import (
     run_chat,
     emit_chat_event,
     create_embeddings,
 )
+
+def normalize_kql_query(query: str) -> str:
+    """
+    Normalize a KQL query by:
+    1. Removing single-line comments (// ...)
+    2. Removing multi-line comments (/* ... */)
+    3. Replacing newlines with single spaces
+    4. Collapsing multiple spaces into one
+    
+    Args:
+        query: The KQL query to normalize
+        
+    Returns:
+        str: The normalized query as a single line
+    """
+    # Remove single-line comments (// to end of line)
+    query = re.sub(r'//.*?(?=\n|$)', '', query)
+    
+    # Remove multi-line comments (/* ... */)
+    query = re.sub(r'/\*.*?\*/', '', query, flags=re.DOTALL)
+    
+    # Replace all newlines and carriage returns with single space
+    query = re.sub(r'[\r\n]+', ' ', query)
+    
+    # Collapse multiple spaces into one
+    query = re.sub(r'\s+', ' ', query)
+    
+    # Strip leading/trailing whitespace
+    return query.strip()
 
 # ---------------- Intent Extraction & Enforcement (A-C) ---------------- #
 _TIME_REGEX = re.compile(r"(last|past)\s+(\d+)\s+(minute|minutes|hour|hours|day|days|week|weeks)", re.IGNORECASE)
@@ -680,16 +709,17 @@ def _attempt_translation(nl_question, use_slim_prompt: bool = False):
     # Align naming with existing internal references expecting 'slim_prompt'
     slim_prompt = use_slim_prompt
     
-    # Load context from example files
-    try:
-        domain = detect_domain(nl_question)
-    except ValueError as dom_exc:
-        return f"// Error: {dom_exc}"  # Early exit with explicit domain classification error
-    try:
-        ctx = load_domain_context(domain, nl_question)
-    except RuntimeError as embed_exc:
-        # Hard enforcement failure (e.g., REQUIRE_EMBEDDINGS=1 but embeddings unavailable)
-        return f"// Error: {embed_exc}"
+    # Skip domain detection and context loading - use minimal context
+    domain = None
+    print(f"[domain-detect] skipped - no domain classification")
+    ctx = {
+        "fewshots": "",
+        "capsule": "",
+        "function_signatures": "",
+        "function_count": "0",
+        "selected_example_count": "0",
+        "selected_examples_present": "False"
+    }
 
     # Early abort for containers domain if no selected examples (per new rule)
     if domain == "containers" and ctx.get("selected_example_count") == "0":
@@ -706,81 +736,22 @@ def _attempt_translation(nl_question, use_slim_prompt: bool = False):
             print(f"[translate-abort] logging emit failed: {log_exc}")
         return f"// Error: {err_msg} [domain=containers selected_example_count=0]"
     
-    # Build layered prompt (force KQL-only) then append domain-specific examples.
-    layered_prompt, layered_meta = build_prompt(nl_question, force_kql_only=True)
+    # Use only the static system prompt - no layering, examples, or additional content
+    system_prompt = SYSTEM_PROMPT
+    
+    # Build minimal metadata for logging purposes only
+    layered_meta = {
+        "schema_version": "1.0",
+        "output_mode": "kql-only",
+        "system_hash": stable_hash(system_prompt),
+        "function_index_hash": ""
+    }
 
-    fewshots_text = ctx.get("fewshots", "")
-    fn_text_full = ctx.get("function_signatures", "")
-    capsule_full = ctx.get("capsule", "")
-
-    # Initial assembly (non-slim prompt)
-    if slim_prompt:
-        split_parts = fewshots_text.split("\n\n")
-        slim_block = split_parts[0] if split_parts else fewshots_text
-        examples_section = f"\n\nFewShot (slim for domain={domain}):\n" + slim_block
-        compression_meta = "slim_prompt=true"
-    else:
-        examples_section = (
-            f"\n\nFewShotsSelected ({ctx.get('selected_example_count','0')}):\n" + fewshots_text +
-            f"\n\nFunctionSignatures ({ctx.get('function_count','0')} detected):\n" + fn_text_full[:1000] +
-            "\n\nCapsuleSummaryExcerpt:\n" + capsule_full[:600]
-        )
-        compression_meta = "slim_prompt=false"
-
-    # ---------------- Token-based dynamic compression ---------------- #
-    tentative_prompt = layered_prompt + examples_section
-    TOKEN_LIMIT = int(os.getenv("PROMPT_TOKEN_LIMIT", "4000"))
-    token_count = _count_tokens(tentative_prompt)
-    compression_stage = "none"
-    if token_count > TOKEN_LIMIT and not slim_prompt:
-        # Stage 1: remove capsule entirely
-        compression_stage = "capsule-removed"
-        examples_section = (
-            f"\n\nFewShotsSelected ({ctx.get('selected_example_count','0')}):\n" + fewshots_text +
-            f"\n\nFunctionSignatures ({ctx.get('function_count','0')} detected):\n" + fn_text_full[:1200]
-        )
-        tentative_prompt = layered_prompt + examples_section
-        token_count = _count_tokens(tentative_prompt)
-    if token_count > TOKEN_LIMIT and not slim_prompt:
-        # Stage 2: truncate function signatures
-        compression_stage = compression_stage + "+fn-trunc"
-        examples_section = (
-            f"\n\nFewShotsSelected ({ctx.get('selected_example_count','0')}):\n" + fewshots_text +
-            f"\n\nFunctionSignatures ({ctx.get('function_count','0')} detected, truncated):\n" + fn_text_full[:600]
-        )
-        tentative_prompt = layered_prompt + examples_section
-        token_count = _count_tokens(tentative_prompt)
-    if token_count > TOKEN_LIMIT and not slim_prompt:
-        # Stage 3: truncate fewshots to first block
-        compression_stage = compression_stage + "+fewshots-trunc"
-        first_block = fewshots_text.split("\n\n")[0] if fewshots_text else ""
-        examples_section = (
-            f"\n\nFewShotPrimary ({ctx.get('selected_example_count','0')} total, truncated to 1):\n" + first_block +
-            f"\n\nFunctionSignatures ({ctx.get('function_count','0')} detected, truncated):\n" + fn_text_full[:500]
-        )
-        tentative_prompt = layered_prompt + examples_section
-        token_count = _count_tokens(tentative_prompt)
-    if slim_prompt:
-        compression_stage = "slim_prompt"
-    compression_meta = f"token_limit={TOKEN_LIMIT} tokens={token_count} stage={compression_stage}"
-    # (A) Extract intent, (B) inject directive into system prompt before final meta
-    #_intent = _extract_time_and_metric_intent(nl_question)
-    system_prompt_core = layered_prompt + examples_section
-    system_prompt = system_prompt_core + f"\n\n// prompt-meta {compression_meta} size_chars={len(system_prompt_core)}"
-    # Log full layered prompt (truncated) for debugging prompt construction
-    try:
-        _prompt_tokens_est = _count_tokens(system_prompt)
-        _prompt_preview = system_prompt[:1500]
-        if len(system_prompt) > 1500:
-            _prompt_preview += "...(truncated)"
-        print(f"[full-prompt] slim_prompt={slim_prompt} chars={len(system_prompt)} tokens~={_prompt_tokens_est} preview_start={json.dumps(_prompt_preview)[:1600]}")
-    except Exception as _prompt_log_exc:
-        print(f"[full-prompt] logging_failed error={_prompt_log_exc}")
-    # Debug: assert whether canonical example phrase present (case-insensitive)
-    print(f"[prompt-debug] domain={domain} selected_examples={ctx.get('selected_example_count','0')} fn_count={ctx.get('function_count','0')}")
+    # Log prompt info
+    print(f"[prompt-debug] domain=none selected_examples=0 fn_count=0")
     print(f"[prompt] schema_version={layered_meta.get('schema_version')} output_mode={layered_meta.get('output_mode')} system_hash={layered_meta.get('system_hash')} fn_index_hash={layered_meta.get('function_index_hash')}")
 
-    user_prompt = f"Question (domain={domain}): {nl_question}\nReturn ONLY the KQL query using appropriate tables for the {domain} domain."
+    user_prompt = nl_question
 
     # Support legacy test monkeypatching: chat_completion may return tuple
     legacy_cfg = {
@@ -809,7 +780,7 @@ def _attempt_translation(nl_question, use_slim_prompt: bool = False):
         emit_chat_event(chat_res, extra={
             "phase": "translation",
             "domain": domain,
-            "prompt_hash": stable_hash(layered_prompt),
+            "prompt_hash": stable_hash(system_prompt),
             "fn_index_hash": layered_meta.get("function_index_hash"),
             "schema_version": layered_meta.get("schema_version"),
             "selected_example_count": ctx.get("selected_example_count"),
@@ -820,9 +791,9 @@ def _attempt_translation(nl_question, use_slim_prompt: bool = False):
 
     examples_included = ctx.get("selected_example_count") not in (None, "0")
     if chat_res.error:
-        return f"// Error translating NL to KQL: {chat_res.error} [domain={domain} examples_included={examples_included} slim_prompt={slim_prompt}]"
+        return f"// Error translating NL to KQL: {chat_res.error} [examples_included={examples_included} slim_prompt={slim_prompt}]"
     if not chat_res.content:
-        return f"// Error: Empty or invalid response from AI [domain={domain} examples_included={examples_included} slim_prompt={slim_prompt}]"
+        return f"// Error: Empty or invalid response from AI [examples_included={examples_included} slim_prompt={slim_prompt}]"
 
     kql = chat_res.content.strip()
     
@@ -834,7 +805,7 @@ def _attempt_translation(nl_question, use_slim_prompt: bool = False):
     
     # Basic validation - check if it looks like a valid KQL query
     if not kql or len(kql.strip()) < 5:
-        return f"// Error: Empty or invalid response from AI [domain={domain} examples_included={examples_included} slim_prompt={slim_prompt}]"
+        return f"// Error: Empty or invalid response from AI [examples_included={examples_included} slim_prompt={slim_prompt}]"
     
     # Check for invalid starting characters
     if kql.strip().startswith('.'):
@@ -848,12 +819,13 @@ def _attempt_translation(nl_question, use_slim_prompt: bool = False):
         "i cannot", "i can't", "sorry", "apologize", "could not"
     ]
     if any(p in content_lower for p in error_phrases):
-        return f"// Error: AI returned error response: {kql} [domain={domain} examples_included={examples_included} slim_prompt={slim_prompt}]"
+        return f"// Error: AI returned error response: {kql} [examples_included={examples_included} slim_prompt={slim_prompt}]"
     
-    # Successful translation; prepend structured telemetry meta as comment
-    # Intent enforcement removed per user request (was corrupting generated KQL).
-    meta_prefix = f"// meta: domain={domain} slim_prompt={slim_prompt} examples_included={examples_included} selected_examples={ctx.get('selected_example_count','0')} {compression_meta}\n"
-    return meta_prefix + kql
+    # Normalize the query: remove comments and format as single line
+    kql = normalize_kql_query(kql)
+    
+    # Return normalized query without meta prefix
+    return kql
 
 if __name__ == "__main__":
     # Test the enhanced translation

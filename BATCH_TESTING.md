@@ -1,6 +1,6 @@
-# Batch Testing KQL Queries from Excel
+# Batch Testing KQL Queries from CSV/Excel
 
-This tool allows you to test multiple natural language prompts in batch by reading them from an Excel file, generating KQL queries, and writing the results back.
+This tool allows you to test multiple natural language prompts in batch by reading them from CSV or Excel files, generating KQL queries, and writing the results back.
 
 ## Setup
 
@@ -27,9 +27,9 @@ python create_test_template.py
 python batch_test_queries.py test_prompts_template.xlsx
 ```
 
-### Option 2: Use Your Own Excel File
+### Option 2: Use Your Own CSV/Excel File
 
-Your Excel file should have these columns:
+Your CSV or Excel file should have these columns:
 - **Prompt** (required): Natural language questions
 - **Expected Query** (optional): Expected KQL queries for comparison
 - **Generated Query** (will be added): The actual generated KQL
@@ -42,9 +42,14 @@ python batch_test_queries.py my_prompts.xlsx --workspace 81a662b5-8541-481b-977d
 
 ## Usage
 
-### Basic Usage
+### Basic Usage (Excel)
 ```bash
 python batch_test_queries.py input.xlsx
+```
+
+### Basic Usage (CSV)
+```bash
+python batch_test_queries.py input.csv
 ```
 
 ### Specify Workspace ID
@@ -54,6 +59,8 @@ python batch_test_queries.py input.xlsx --workspace YOUR_WORKSPACE_ID
 
 ### Specify Output File
 ```bash
+# Output format matches input format by default
+python batch_test_queries.py input.csv --output results.csv
 python batch_test_queries.py input.xlsx --output results.xlsx
 ```
 
@@ -62,8 +69,8 @@ python batch_test_queries.py input.xlsx --output results.xlsx
 python batch_test_queries.py input.xlsx \
   --prompt-col "Question" \
   --output-col "Answer" \
-  --reason-col "Status"
-```
+  --reason-col "Status"CSV or Excel file | (required) |
+| `-o, --output` | Path to output file (same format as input) | `input_results_TIMESTAMP.{csv\|xlsx}
 
 ## Command Line Options
 
@@ -77,9 +84,26 @@ python batch_test_queries.py input.xlsx \
 | `--output-col` | Name of output query column | `Generated Query` |
 | `--reason-col` | Name of reason/status column | `Reason` |
 
-## Excel File Format
+## File Format (CSV/Excel)
 
 ### Input Format
+Works with both CSV and Excel formats with the same column structure:
+
+**Option 1: CSV/Excel with Headers**
+```
+| Prompt                                    | Expected Query | Generated Query | Reason |
+|-------------------------------------------|----------------|-----------------|--------|
+| Show me failed requests from last hour    |                |                 |        |
+| Top 3 browser exceptions                  |                |                 |        |
+```
+
+**Option 2: Headerless CSV** (auto-detected)
+```csv
+Show me failed requests from last hour,"AppRequests | where TimeGenerated > ago(1h)..."
+Top 3 browser exceptions,"AppExceptions | top 3..."
+```
+
+The tool automatically detects headerless CSV files and assigns standard column names.
 ```
 | Prompt                                    | Expected Query | Generated Query | Reason |
 |-------------------------------------------|----------------|-----------------|--------|
@@ -98,10 +122,19 @@ python batch_test_queries.py input.xlsx \
 ```
 
 ## Examples
-
-### Process test file with default settings
+Excel file with default settings
 ```bash
 python batch_test_queries.py test_prompts.xlsx
+```
+
+### Process CSV file with default settings
+```bash
+python batch_test_queries.py test_prompts.csv
+```
+
+### Process headerless CSV (like benchmark_queries.csv)
+```bash
+python batch_test_queries.py app_insights_capsule/benchmark_queries.csv
 ```
 
 ### Process with specific workspace
@@ -112,6 +145,8 @@ python batch_test_queries.py test_prompts.xlsx --workspace 81a662b5-8541-481b-97
 ### Process and save to specific output file
 ```bash
 python batch_test_queries.py test_prompts.xlsx --output my_results.xlsx
+python batch_test_queries.py teCSV or st_prompts.csv --output my_results.csv
+python batch_test_queries.py test_prompts.xlsx --output my_results.xlsx
 ```
 
 ## Output
@@ -119,7 +154,7 @@ python batch_test_queries.py test_prompts.xlsx --output my_results.xlsx
 The script will:
 1. Read prompts from the input Excel file
 2. Generate KQL queries for each prompt using the agent
-3. Write generated queries to the "Generated Query" column
+3. Write geCSV file: test_prompts.csvated Query" column
 4. Write success/error status to the "Reason" column
 5. Save results to the output file
 
@@ -135,7 +170,7 @@ Example output:
 🔄 Row 2/5: Top 3 browser exceptions
 ✅ Generated query (312 chars)
 
-💾 Saving results to: test_prompts_results_20260111_123456.xlsx
+💾 Saving results to: test_prompts_results_20260111_123456.csv
 ✅ Results saved successfully
 
 ============================================================
@@ -151,13 +186,13 @@ Total rows processed: 5
 ## Troubleshooting
 
 ### "Failed to read Excel file"
-Install openpyxl:
+Install openpyxl for Excel support:
 ```bash
 pip install openpyxl
 ```
 
 ### "Column 'Prompt' not found"
-Make sure your Excel file has a column named "Prompt", or use `--prompt-col` to specify a different column name.
+Make sure your CSV/Excel file has a column named "Prompt", or use `--prompt-col` to specify a different column name.
 
 ### Authentication errors
 Make sure your `.env` file has the correct Azure OpenAI credentials:
@@ -172,4 +207,7 @@ AZURE_OPENAI_DEPLOYMENT=your-deployment
 - Empty prompts will be skipped
 - The script processes rows sequentially to avoid rate limiting
 - Results are saved even if some queries fail
+- Output format matches input format (CSV→CSV, Excel→Excel)
 - If Excel save fails, a CSV file will be created as a fallback
+- CSV files don't require openpyxl installation
+- **Headerless CSV files are automatically detected** - common format with 2 columns (prompt, expected_query)

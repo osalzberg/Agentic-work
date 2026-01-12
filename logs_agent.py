@@ -6,6 +6,7 @@ This agent translates natural language questions into MCP tool calls
 
 import asyncio
 import json
+import re
 import subprocess
 import sys
 import os
@@ -24,6 +25,69 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 # Import enhanced translation function
 from nl_to_kql import translate_nl_to_kql as translate_nl_to_kql
+
+def extract_innermost_error(error_data):
+    """
+    Extract the innermost error message from nested Azure API error structures.
+    Azure API errors often have nested 'innererror' chains - this function
+    traverses to the deepest level to get the most specific error message.
+    
+    Args:
+        error_data: Can be a string, dict, or nested structure
+        
+    Returns:
+        str: The most specific error message found
+    """
+    if isinstance(error_data, str):
+        # Look for "Inner error:" followed by JSON structure
+        inner_error_match = re.search(r'Inner error:\s*(\{[^}]*"innererror"[^}]*\})', error_data, re.DOTALL)
+        if inner_error_match:
+            try:
+                # Extract and parse the JSON portion
+                json_str = inner_error_match.group(1)
+                # Fix formatting issues (newlines, extra spaces)
+                json_str = re.sub(r'\s+', ' ', json_str)
+                error_obj = json.loads(json_str)
+                return extract_innermost_error(error_obj)
+            except (json.JSONDecodeError, TypeError):
+                pass
+        
+        # Look for the innermost "message" field using regex
+        message_matches = re.findall(r'"message"\s*:\s*"([^"]+)"', error_data)
+        if message_matches:
+            # Return the last (innermost) message
+            return message_matches[-1]
+        
+        # Try to parse as JSON if it's a string
+        try:
+            error_data = json.loads(error_data)
+        except (json.JSONDecodeError, TypeError):
+            # If it's not JSON, return as-is
+            return error_data
+    
+    if isinstance(error_data, dict):
+        # Check for Azure API error structure
+        if 'innererror' in error_data:
+            return extract_innermost_error(error_data['innererror'])
+        
+        # Check for standard error message fields
+        if 'message' in error_data:
+            msg = error_data['message']
+            # If message itself is nested, recurse
+            if isinstance(msg, dict):
+                return extract_innermost_error(msg)
+            return str(msg)
+        
+        # Check for other common error fields
+        for field in ['error', 'Error', 'error_message', 'errorMessage']:
+            if field in error_data:
+                return extract_innermost_error(error_data[field])
+        
+        # If no standard fields, return the whole dict as string
+        return json.dumps(error_data)
+    
+    # For other types, convert to string
+    return str(error_data)
 
 class KQLAgent:
     """Agent that processes natural language and calls MCP server tools"""
@@ -188,7 +252,9 @@ class KQLAgent:
                 return {"success": False, "error": f"Unknown tool: {tool_name}"}
                 
         except Exception as e:
-            return {"success": False, "error": f"Error calling tool {tool_name}: {str(e)}"}
+            # Extract the innermost error from the exception
+            error_message = extract_innermost_error(str(e))
+            return {"success": False, "error": error_message}
 
     def format_table_results(self, tables: List[Dict]) -> Dict:
         """Format query results as structured data for web display"""
@@ -372,11 +438,14 @@ class KQLAgent:
                     "message": "✅ Query executed successfully"
                 }
             else:
+                # Extract the innermost error message
+                error_message = extract_innermost_error(result['error'])
+                
                 return {
                     "type": "query_error", 
                     "kql_query": kql_query,
-                    "error": result['error'],
-                    "message": f"❌ Query execution failed: {result['error']}"
+                    "error": error_message,
+                    "message": f"❌ Query execution failed: {error_message}"
                 }
                 
         except Exception as e:

@@ -33,6 +33,17 @@ from typing import Dict, List, Optional, Tuple
 PROMPT_SCHEMA_VERSION = 2
 REPO_ROOT = os.path.dirname(os.path.abspath(__file__))
 
+# Load environment variables
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
+
+# System prompt - read from environment variable with fallback default
+_DEFAULT_SYSTEM_PROMPT = "Translate the user prompt to KQL (Kusto Query Language) to run on an Azure Log Analytics workspace. Return ONLY the KQL query code with no explanations, comments, or additional text. NEVER use the old Application Insights schema, only tables listed in this page: https://learn.microsoft.com/en-us/azure/azure-monitor/reference/tables-index#application-insights"
+SYSTEM_PROMPT = os.environ.get("KQL_SYSTEM_PROMPT", _DEFAULT_SYSTEM_PROMPT)
+
 # ------------------------- File Loading Helpers ------------------------- #
 
 def _safe_read(path: str) -> str:
@@ -182,75 +193,19 @@ def build_prompt(
 ) -> Tuple[str, Dict]:
     intent_meta = intent_meta or {}
 
-    # L0 System
-    # Prefer relocated container capsule system base, fallback to legacy prompts path (back-compat)
-    system_path_new = os.path.join(REPO_ROOT, "containers_capsule", "system_base.txt")
-    system_path_legacy = os.path.join(REPO_ROOT, "prompts", "system_base.txt")
-    if os.path.exists(system_path_new):
-        system_text = _safe_read(system_path_new)
-    else:
-        system_text = _safe_read(system_path_legacy)
-    if not system_text:
-        system_text = _fallback_system_prompt()
-
-    # L1 Capsule
-    capsule_path_new = os.path.join(REPO_ROOT, "containers_capsule", "domain_capsule_containerlogs.txt")
-    capsule_path_legacy = os.path.join(REPO_ROOT, "prompts", "domain_capsule_containerlogs.txt")
-    if os.path.exists(capsule_path_new):
-        capsule_text = _safe_read(capsule_path_new)
-    else:
-        capsule_text = _safe_read(capsule_path_legacy)
-    capsule_included = bool(capsule_text and include_capsule)
-
-    # L2 Function Index: new top-level capsule path first, fallback to legacy docs path for backward compatibility
-    functions_kql_path_new = os.path.join(REPO_ROOT, "containers_capsule", "kql_functions_containerlogs.kql")
-    functions_kql_path_legacy = os.path.join(REPO_ROOT, "docs", "containers_capsule", "kql_functions_containerlogs.kql")
-    functions_kql_path_fallback_old = os.path.join(REPO_ROOT, "docs", "kql_functions_containerlogs.kql")  # very old layout
-    if os.path.exists(functions_kql_path_new):
-        functions_kql_path = functions_kql_path_new
-    elif os.path.exists(functions_kql_path_legacy):
-        functions_kql_path = functions_kql_path_legacy
-    else:
-        functions_kql_path = functions_kql_path_fallback_old
-    function_raw = _safe_read(functions_kql_path)
-    fn_index = extract_function_index(function_raw)
-    fn_index_block = "\n".join(f"- {f}" for f in fn_index) if fn_index else ""
-
-    # L3 Retrieval
-    addendum = derive_context_addendum(user_query)
-    retrieval_keywords = [k for k in KEYWORD_CONTEXT_MAP.keys() if k in user_query.lower()]
-
-    # L4 Clarified Query
-    clarified = clarify_query(user_query)
-
-    # L5 Output Mode
-    output_mode, directive = decide_output_mode(clarified)
-    if force_kql_only and output_mode != "kql-only":
-        # Override to strict KQL only mode for translation pipeline usage
-        output_mode = "kql-only"
-        directive = "Output Mode: Return only the KQL query (no prose)."
-
-    # Assemble
-    parts: List[str] = [system_text]
-    if capsule_included:
-        parts.append("Domain Capsule:\n" + capsule_text)
-    if fn_index_block:
-        parts.append("Functions:\n" + fn_index_block)
-    if addendum:
-        parts.append("Context Addendum:\n" + addendum)
-    parts.append("User Query (clarified):\n" + clarified)
-    parts.append(directive)
-
-    full_prompt = "\n\n".join(p for p in parts if p.strip())
-    full_prompt = mask_secrets(full_prompt)
+    # Use the system prompt constant
+    system_text = SYSTEM_PROMPT
+    
+    # Use the user query directly without modification
+    full_prompt = system_text
 
     meta = PromptMetadata(
         schema_version=PROMPT_SCHEMA_VERSION,
         system_hash=stable_hash(system_text),
-        capsule_included=capsule_included,
-        function_index_hash=stable_hash(fn_index_block),
-        retrieval_keywords=retrieval_keywords,
-        output_mode=output_mode,
+        capsule_included=False,
+        function_index_hash="",
+        retrieval_keywords=[],
+        output_mode="kql-only",
         timestamp_utc=datetime.now(UTC).isoformat().replace("+00:00", "Z"),
     )
     return full_prompt, asdict(meta)

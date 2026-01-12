@@ -64,6 +64,7 @@ DOCS_META_MAX_SECONDS = float(os.environ.get("DOCS_META_MAX_SECONDS", "10"))  # 
 DOCS_ENRICH_MAX_TABLES = int(os.environ.get("DOCS_ENRICH_MAX_TABLES", "8"))  # cap number of unmatched tables to enrich per request
 DOCS_ENRICH_MAX_SECONDS = float(os.environ.get("DOCS_ENRICH_MAX_SECONDS", "5"))  # cumulative time budget per request
 DOCS_ENRICH_COLUMN_FETCH = bool(os.environ.get("DOCS_ENRICH_COLUMN_FETCH", "1"))  # allow disabling column scraping (heavier)
+DISABLE_SCHEMA_FETCH = bool(os.environ.get("DISABLE_SCHEMA_FETCH"))  # Disable all schema and table queries fetching on workspace connect
 
 
 # Generic examples fallback
@@ -176,6 +177,8 @@ def fetch_workspace_schema():
     global workspace_id
     if not workspace_id:
         return jsonify({'success': False, 'workspace_id': None, 'table_count': 0, 'error': 'Workspace not initialized'}), 200
+    if DISABLE_SCHEMA_FETCH:
+        return jsonify({'success': True, 'workspace_id': workspace_id, 'table_count': 0, 'retrieved_at': None, 'source': 'disabled', 'disabled': True}), 200
     try:
         result = get_workspace_schema(workspace_id)
         if result.get('error'):
@@ -653,7 +656,7 @@ def workspace_schema_status():
 
     Returns JSON:
       success: bool
-      status: 'uninitialized' | 'ready' | 'empty'
+      status: 'uninitialized' | 'ready' | 'empty' | 'disabled'
       workspace_id: str|None
       table_count: int
       retrieved_at: str|None
@@ -662,6 +665,8 @@ def workspace_schema_status():
     global workspace_id
     if not workspace_id:
         return jsonify({'success': False, 'status': 'uninitialized', 'workspace_id': None, 'table_count': 0, 'retrieved_at': None, 'source': None})
+    if DISABLE_SCHEMA_FETCH:
+        return jsonify({'success': True, 'status': 'disabled', 'workspace_id': workspace_id, 'table_count': 0, 'retrieved_at': None, 'source': 'disabled', 'disabled': True})
     result = get_workspace_schema(workspace_id)
     if result.get('error'):
         return jsonify({'success': False, 'status': 'error', 'workspace_id': workspace_id, 'error': result.get('error'), 'table_count': 0, 'retrieved_at': None, 'source': None})
@@ -686,7 +691,7 @@ def workspace_schema():
 
     Returns:
       success: bool
-      status: ready|empty|uninitialized|error
+      status: ready|empty|uninitialized|error|disabled
       workspace_id: str|None
       tables: [ { name, resource_type, manifest_resource_types? } ]
       counts: { workspace_tables, tables_with_manifest_queries, tables_with_capsule_csv_queries, tables_with_docs_queries }
@@ -697,6 +702,8 @@ def workspace_schema():
     global workspace_id
     if not workspace_id:
         return jsonify({'success': False, 'status': 'uninitialized', 'workspace_id': None, 'tables': [], 'counts': {}, 'table_queries': {}, 'table_metadata': {}, 'error': 'Workspace not initialized'}), 400
+    if DISABLE_SCHEMA_FETCH:
+        return jsonify({'success': True, 'status': 'disabled', 'workspace_id': workspace_id, 'tables': [], 'counts': {}, 'table_queries': {}, 'table_metadata': {}, 'disabled': True}), 200
     try:
         # Fetch workspace tables
         ws_result = get_workspace_schema(workspace_id)
@@ -1283,7 +1290,8 @@ def setup_workspace():
         
         return jsonify({
             'success': True, 
-            'message': f'Agent initialized for workspace: {workspace_id}'
+            'message': f'Agent initialized for workspace: {workspace_id}',
+            'schema_disabled': DISABLE_SCHEMA_FETCH
         })
         
     except Exception as e:
@@ -1741,6 +1749,52 @@ def static_files(filename):
     """Serve static files"""
     return send_from_directory('static', filename)
 
+@app.route('/api/score-query', methods=['POST'])
+def score_query():
+    """Score a generated query against an expected query."""
+    try:
+        from query_scorer import calculate_total_score
+        
+        data = request.get_json()
+        
+        # Required fields
+        generated_kql = data.get('generated_kql', '')
+        expected_kql = data.get('expected_kql', '')
+        prompt = data.get('prompt', '')
+        
+        # Query execution results
+        generated_columns = data.get('generated_columns', [])
+        expected_columns = data.get('expected_columns', [])
+        generated_results = data.get('generated_results', [])
+        expected_results = data.get('expected_results', [])
+        
+        # Model for LLM grading
+        model = data.get('model', 'gpt-4o-mini')
+        
+        # Calculate score
+        score_result = calculate_total_score(
+            generated_kql=generated_kql,
+            expected_kql=expected_kql,
+            generated_columns=generated_columns,
+            expected_columns=expected_columns,
+            generated_results=generated_results,
+            expected_results=expected_results,
+            prompt=prompt,
+            model=model
+        )
+        
+        return jsonify({
+            'success': True,
+            'score': score_result
+        })
+        
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e),
+            'traceback': traceback.format_exc()
+        }), 500
+
 @app.route('/api/query-execute', methods=['POST'])
 def query_execute():
     """Execute a KQL query and return results."""
@@ -1837,31 +1891,79 @@ def batch_test_parse():
             'error': 'No file selected'
         }), 400
     
-    if not file.filename.endswith(('.xlsx', '.xls')):
+    if not file.filename.endswith(('.xlsx', '.xls', '.csv')):
         return jsonify({
             'success': False,
-            'error': 'File must be .xlsx or .xls format'
+            'error': 'File must be .xlsx, .xls, or .csv format'
         }), 400
     
     try:
         import pandas as pd
         
-        # Read Excel file
-        df = pd.read_excel(file)
+        # Read file based on extension
+        if file.filename.endswith('.csv'):
+            # Try flexible CSV parsing to handle mixed delimiters
+            try:
+                df = pd.read_csv(file)
+            except Exception:
+                # Reset file pointer and try with flexible parsing
+                file.seek(0)
+                try:
+                    df = pd.read_csv(file, sep=None, engine='python')
+                except Exception:
+                    # Last resort: try with explicit quoting and skip bad lines
+                    file.seek(0)
+                    df = pd.read_csv(file, quotechar='"', escapechar='\\', on_bad_lines='skip')
+            # Ensure proper index and clean column names
+            df = df.reset_index(drop=True)
+            df.columns = df.columns.str.strip()
+            
+            # Map common column name variations
+            col_map = {}
+            for col in df.columns:
+                col_lower = col.lower()
+                if col_lower in ['question', 'nl', 'natural language', 'ask']:
+                    col_map[col] = 'Prompt'
+                elif col_lower in ['query', 'kql', 'expected', 'expected query', 'expected_query']:
+                    col_map[col] = 'Expected Query'
+            if col_map:
+                df = df.rename(columns=col_map)
+        else:
+            df = pd.read_excel(file)
+        
+        # Debug: Log actual columns and first row
+        print(f"[DEBUG parse] Columns after mapping: {list(df.columns)}")
+        if len(df) > 0:
+            print(f"[DEBUG parse] First row Prompt: {df['Prompt'].iloc[0] if 'Prompt' in df.columns else 'N/A'}")
+            for col in df.columns:
+                print(f"[DEBUG parse] First row [{col}]: {df[col].iloc[0]}")
         
         # Validate columns
         if 'Prompt' not in df.columns:
             return jsonify({
                 'success': False,
-                'error': 'Excel file must have a "Prompt" column'
+                'error': 'File must have a "Prompt" column'
             }), 400
         
-        # Extract prompts
+        # Extract prompts and expected queries
         prompts = df['Prompt'].fillna('').astype(str).tolist()
+        
+        # Also extract expected queries if available
+        test_cases = []
+        has_expected = 'Expected Query' in df.columns or 'Query' in df.columns
+        expected_col = 'Expected Query' if 'Expected Query' in df.columns else ('Query' if 'Query' in df.columns else None)
+        
+        for idx in range(len(df)):
+            test_case = {
+                'prompt': prompts[idx],
+                'expected_query': df[expected_col].iloc[idx] if expected_col and pd.notna(df[expected_col].iloc[idx]) else None
+            }
+            test_cases.append(test_case)
         
         return jsonify({
             'success': True,
-            'prompts': prompts
+            'prompts': prompts,
+            'test_cases': test_cases
         })
         
     except ImportError:
@@ -1878,14 +1980,17 @@ def batch_test_parse():
 
 @app.route('/api/batch-test/build', methods=['POST'])
 def batch_test_build():
-    """Build Excel file from results."""
+    """Build Excel file from results and optionally save CSV report."""
     try:
         import pandas as pd
         import base64
+        from datetime import datetime
+        import os
         
         data = request.json
         filename = data.get('filename', 'results.xlsx')
         results = data.get('results', [])
+        input_file_type = data.get('input_file_type', 'excel')
         
         if not results:
             return jsonify({
@@ -1893,31 +1998,151 @@ def batch_test_build():
                 'error': 'No results provided'
             }), 400
         
+        # Get model info
+        model_deployment = os.environ.get('AZURE_OPENAI_DEPLOYMENT', 'Unknown')
+        api_version = os.environ.get('AZURE_OPENAI_API_VERSION', 'Unknown')
+        
+        # Get system prompt from single source of truth
+        from prompt_builder import SYSTEM_PROMPT
+        system_prompt = SYSTEM_PROMPT
+        
+        # Calculate summary
+        from datetime import datetime
+        success_count = sum(1 for r in results if r.get('status') == 'success')
+        failed_count = sum(1 for r in results if r.get('status') == 'failed')
+        wrong_query_count = sum(1 for r in results if r.get('status') == 'wrong_query')
+        total_count = len(results)
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        
+        # Create metadata rows for Excel
+        metadata_rows = [
+            ['Model', model_deployment],
+            ['API Version', api_version],
+            ['System Prompt', system_prompt],
+            ['Timestamp', datetime.now().strftime('%Y-%m-%d %H:%M:%S')],
+            [''],
+            ['SUMMARY', ''],
+            ['Total', total_count],
+            ['Successful', success_count],
+            ['Failed', failed_count],
+            ['Wrong Query Generated', wrong_query_count],
+            ['']
+        ]
+        
         # Create DataFrame
         rows = []
         for r in results:
-            rows.append({
+            row_data = {
                 'Prompt': r.get('prompt', ''),
-                'Expected Query': '',  # User can fill this in manually
+                'Expected Query': r.get('expected_query', ''),
                 'Generated Query': r.get('query', ''),
-                'Reason': r.get('reason', ''),
-                'Query Output': r.get('output', '')
-            })
+                'Execution Success': r.get('execution_success', False),
+                'Expected Rows Count': r.get('expected_rows_count'),
+                'Returned Rows Count': r.get('returned_rows_count'),
+                'Summary': r.get('reason', '')
+            }
+            
+            # Add score fields if available
+            if r.get('score'):
+                score = r['score']
+                components = score.get('components', {})
+                row_data['Total Score'] = score.get('total_score', 0)
+                row_data['Score Status'] = 'PASS' if score.get('is_successful', False) else 'FAIL'
+                row_data['Result Equality Score'] = components.get('result_equality', {}).get('score', 0)
+                row_data['Execution Success Score'] = components.get('exec_success', {}).get('score', 0)
+                row_data['Schema Match Score'] = components.get('schema_match', {}).get('score', 0)
+                row_data['Rows Match Score'] = components.get('rows_match', {}).get('score', 0)
+                row_data['Structural Similarity Score'] = components.get('structural_similarity', {}).get('score', 0)
+                row_data['LLM Grading Score'] = components.get('llm_grading', {}).get('score', 0)
+                row_data['LLM Reasoning'] = components.get('llm_grading', {}).get('details', {}).get('reasoning', '')
+            else:
+                row_data['Total Score'] = None
+                row_data['Score Status'] = 'N/A'
+                row_data['Result Equality Score'] = None
+                row_data['Execution Success Score'] = None
+                row_data['Schema Match Score'] = None
+                row_data['Rows Match Score'] = None
+                row_data['Structural Similarity Score'] = None
+                row_data['LLM Grading Score'] = None
+                row_data['LLM Reasoning'] = ''
+            
+            rows.append(row_data)
         
         df = pd.DataFrame(rows)
         
-        # Save to BytesIO
+        # Save Excel with metadata rows at top
         output = io.BytesIO()
-        df.to_excel(output, index=False, engine='openpyxl')
+        with pd.ExcelWriter(output, engine='openpyxl') as writer:
+            # Write metadata
+            metadata_df = pd.DataFrame(metadata_rows)
+            metadata_df.to_excel(writer, sheet_name='Results', index=False, header=False, startrow=0)
+            
+            # Write data table below metadata
+            df.to_excel(writer, sheet_name='Results', index=False, startrow=len(metadata_rows) + 1)
+        
         output.seek(0)
         
-        # Return base64 encoded data
+        # Always save both JSON and Excel reports to reports/ folder
+        reports_dir = 'reports'
+        os.makedirs(reports_dir, exist_ok=True)
+        
+        # Generate base filename: benchmark_<model>_<datetime>
+        base_filename = f"benchmark_{model_deployment}_{timestamp}"
+        json_filename = f"{base_filename}.json"
+        excel_filename = f"{base_filename}.xlsx"
+        json_report_path = os.path.join(reports_dir, json_filename)
+        excel_report_path = os.path.join(reports_dir, excel_filename)
+        
+        # Save JSON report
+        json_data = {
+            'metadata': {
+                'model': model_deployment,
+                'api_version': api_version,
+                'system_prompt': system_prompt,
+                'timestamp': timestamp,
+                'summary': {
+                    'total': total_count,
+                    'successful': success_count,
+                    'failed': failed_count,
+                    'wrong_query': wrong_query_count
+                }
+            },
+            'results': [{
+                'prompt': r.get('prompt', ''),
+                'expected_query': r.get('expected_query', ''),
+                'generated_query': r.get('query', ''),
+                'execution_success': r.get('execution_success', False),
+                'expected_rows_count': r.get('expected_rows_count'),
+                'returned_rows_count': r.get('returned_rows_count'),
+                'summary': r.get('reason', ''),
+                'score': r.get('score')  # Include full score object if available
+            } for r in results]
+        }
+        
+        import json
+        with open(json_report_path, 'w', encoding='utf-8') as f:
+            json.dump(json_data, f, indent=2, ensure_ascii=False)
+        print(f"[INFO] JSON report saved to: {json_report_path}")
+        
+        # Save Excel report to reports folder
+        with open(excel_report_path, 'wb') as f:
+            f.write(output.getvalue())
+        print(f"[INFO] Excel report saved to: {excel_report_path}")
+        
+        # Return base64 encoded data for download
         encoded_file = base64.b64encode(output.getvalue()).decode('utf-8')
         
         return jsonify({
             'success': True,
             'file_data': encoded_file,
-            'filename': f"results_{secure_filename(filename)}"
+            'filename': f"results_{secure_filename(filename)}",
+            'json_report_path': json_report_path,
+            'excel_report_path': excel_report_path,
+            'model_info': {
+                'deployment': model_deployment,
+                'api_version': api_version
+            },
+            'system_prompt': system_prompt
         })
         
     except ImportError:
@@ -1957,24 +2182,52 @@ def batch_test_upload():
             'error': 'No file selected'
         }), 400
     
-    if not file.filename.endswith(('.xlsx', '.xls')):
+    if not file.filename.endswith(('.xlsx', '.xls', '.csv')):
         return jsonify({
             'success': False,
-            'error': 'File must be .xlsx or .xls format'
+            'error': 'File must be .xlsx, .xls, or .csv format'
         }), 400
     
     try:
         import pandas as pd
         
-        # Read Excel file
-        df = pd.read_excel(file)
+        # Read file based on extension
+        if file.filename.endswith('.csv'):
+            # Try flexible CSV parsing to handle mixed delimiters
+            try:
+                df = pd.read_csv(file)
+            except Exception:
+                # Reset file pointer and try with flexible parsing
+                file.seek(0)
+                try:
+                    df = pd.read_csv(file, sep=None, engine='python')
+                except Exception:
+                    # Last resort: try with explicit quoting and skip bad lines
+                    file.seek(0)
+                    df = pd.read_csv(file, quotechar='"', escapechar='\\', on_bad_lines='skip')
+            # Ensure proper index and clean column names
+            df = df.reset_index(drop=True)
+            df.columns = df.columns.str.strip().str.replace('\t', '', regex=False)
+            
+            # Map common column name variations
+            col_map = {}
+            for col in df.columns:
+                col_lower = col.lower().strip()
+                if col_lower in ['question', 'nl', 'natural language', 'ask']:
+                    col_map[col] = 'Prompt'
+                elif col_lower in ['query', 'kql', 'expected', 'expected query', 'expected_query']:
+                    col_map[col] = 'Expected Query'
+            if col_map:
+                df = df.rename(columns=col_map)
+        else:
+            df = pd.read_excel(file)
         
         # Validate columns
         required_cols = ['Prompt']
         if 'Prompt' not in df.columns:
             return jsonify({
                 'success': False,
-                'error': f'Excel file must have a "Prompt" column. Found columns: {", ".join(df.columns)}'
+                'error': f'File must have a "Prompt" column. Found columns: {", ".join(df.columns)}'
             }), 400
         
         # Add output columns if they don't exist
@@ -1988,15 +2241,8 @@ def batch_test_upload():
         for idx, row in df.iterrows():
             prompt = row['Prompt']
             
-            # Skip empty prompts
+            # Skip empty prompts silently (no logging, no display)
             if pd.isna(prompt) or not str(prompt).strip():
-                df.at[idx, 'Reason'] = 'Empty prompt (skipped)'
-                results.append({
-                    'row': idx + 1,
-                    'prompt': '',
-                    'status': 'skipped',
-                    'reason': 'Empty prompt'
-                })
                 continue
             
             prompt_str = str(prompt).strip()
@@ -2099,15 +2345,18 @@ def batch_test_upload():
         }), 500
 
 if __name__ == '__main__':
-    print("🌐 Starting Natural Language KQL Agent Web Interface...")
-    print("📊 Features available:")
+    print("Starting Natural Language KQL Agent Web Interface...")
+    print("Features available:")
     print("   - Natural language to KQL translation")
     print("   - Interactive workspace setup")
     print("   - Query execution and results display")
     print("   - Example queries and suggestions")
-    print("   - Workspace table discovery")
+    if not DISABLE_SCHEMA_FETCH:
+        print("   - Workspace table discovery")
+    else:
+        print("   - Schema fetching: DISABLED (queries only)")
     debug_mode = os.environ.get('FLASK_DEBUG','0') == '1'
-    print(f"🚀 Starting server on http://localhost:8080 (debug={debug_mode})")
+    print(f"Starting server on http://localhost:8080 (debug={debug_mode})")
     try:
         app.run(debug=debug_mode, host='0.0.0.0', port=8080)
     except KeyboardInterrupt:

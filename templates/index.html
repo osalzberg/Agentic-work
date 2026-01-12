@@ -1818,7 +1818,7 @@
             <div class="setup-section">
                 <h2>🔧 Workspace Setup</h2>                <div class="input-group">
                     <input type="text" id="workspaceId" placeholder="Enter your Log Analytics Workspace ID" value="81a662b5-8541-481b-977d-5d956616ac5e">
-                    <button id="setWorkspaceBtn" class="btn btn-primary workspace-btn" onclick="console.log('Button clicked!'); setupWorkspace()" aria-live="polite" aria-label="Set workspace">
+                    <button id="setWorkspaceBtn" class="btn btn-primary workspace-btn" aria-live="polite" aria-label="Set workspace">
                         <span class="ws-icon-slot" aria-hidden="true">
                             <span class="ws-spinner"></span>
                             <span class="ws-success">✔</span>
@@ -1898,12 +1898,12 @@
                     <input 
                         type="file" 
                         id="batchFileInput" 
-                        accept=".xlsx,.xls" 
+                        accept=".xlsx,.xls,.csv" 
                         style="display: none;"
                         onchange="handleBatchFileSelect(event)"
                     />
                     <button class="btn btn-primary" onclick="document.getElementById('batchFileInput').click()" style="width: 200px;">
-                        📁 Choose Excel File
+                        📁 Choose File (Excel/CSV)
                     </button>
                     <span id="selectedFileName" style="color: #666; font-style: italic;">No file selected</span>
                 </div>
@@ -1943,31 +1943,31 @@
                     
                     <!-- Detailed Results Accordion -->
                     <div id="batchDetailsSection" style="margin-bottom: 15px;">
-                        <!-- Errors Section -->
+                        <!-- Failed Section -->
                         <div style="background: white; border-radius: 8px; margin-bottom: 10px; border: 1px solid #e9ecef; overflow: hidden;">
-                            <div onclick="toggleBatchSection('errors')" style="padding: 15px; cursor: pointer; background: #fff5f5; border-bottom: 1px solid #fee; display: flex; justify-content: space-between; align-items: center;">
+                            <div onclick="toggleBatchSection('failed')" style="padding: 15px; cursor: pointer; background: #fff5f5; border-bottom: 1px solid #fee; display: flex; justify-content: space-between; align-items: center;">
                                 <div style="display: flex; align-items: center; gap: 10px;">
-                                    <span style="font-weight: bold; color: #dc3545;">❌ Errors</span>
-                                    <span id="errorCount" style="background: #dc3545; color: white; padding: 2px 8px; border-radius: 12px; font-size: 0.85rem;">0</span>
+                                    <span style="font-weight: bold; color: #dc3545;">❌ Failed</span>
+                                    <span id="failedCount" style="background: #dc3545; color: white; padding: 2px 8px; border-radius: 12px; font-size: 0.85rem;">0</span>
                                 </div>
-                                <span id="errorsChevron" style="transition: transform 0.3s;">▼</span>
+                                <span id="failedChevron" style="transition: transform 0.3s;">▼</span>
                             </div>
-                            <div id="errorsContent" style="display: none; max-height: 400px; overflow-y: auto;">
-                                <div id="errorsList" style="padding: 15px;"></div>
+                            <div id="failedContent" style="display: none; max-height: 400px; overflow-y: auto;">
+                                <div id="failedList" style="padding: 15px;"></div>
                             </div>
                         </div>
                         
-                        <!-- Skipped Section -->
+                        <!-- Wrong Query Generated Section -->
                         <div style="background: white; border-radius: 8px; margin-bottom: 10px; border: 1px solid #e9ecef; overflow: hidden;">
-                            <div onclick="toggleBatchSection('skipped')" style="padding: 15px; cursor: pointer; background: #f8f9fa; border-bottom: 1px solid #e9ecef; display: flex; justify-content: space-between; align-items: center;">
+                            <div onclick="toggleBatchSection('wrongQuery')" style="padding: 15px; cursor: pointer; background: #fff9e6; border-bottom: 1px solid #ffe066; display: flex; justify-content: space-between; align-items: center;">
                                 <div style="display: flex; align-items: center; gap: 10px;">
-                                    <span style="font-weight: bold; color: #6c757d;">⏭️ Skipped</span>
-                                    <span id="skippedCount" style="background: #6c757d; color: white; padding: 2px 8px; border-radius: 12px; font-size: 0.85rem;">0</span>
+                                    <span style="font-weight: bold; color: #ff9800;">⚠️ Wrong Query Generated</span>
+                                    <span id="wrongQueryCount" style="background: #ff9800; color: white; padding: 2px 8px; border-radius: 12px; font-size: 0.85rem;">0</span>
                                 </div>
-                                <span id="skippedChevron" style="transition: transform 0.3s;">▼</span>
+                                <span id="wrongQueryChevron" style="transition: transform 0.3s;">▼</span>
                             </div>
-                            <div id="skippedContent" style="display: none; max-height: 400px; overflow-y: auto;">
-                                <div id="skippedList" style="padding: 15px;"></div>
+                            <div id="wrongQueryContent" style="display: none; max-height: 400px; overflow-y: auto;">
+                                <div id="wrongQueryList" style="padding: 15px;"></div>
                             </div>
                         </div>
                         
@@ -3416,9 +3416,6 @@ async function processQuestionWithRetry(question) {
             }, 100); // Small delay to ensure DOM is rendered
         }
 
-        // Attach setupWorkspace to the global window object to ensure accessibility
-        window.setupWorkspace = setupWorkspace;
-
         // --- Workspace-aware schema + queries prefetch & filtering additions ---
         // Caches
     let manifestSchemaCache = null;          // Raw /api/resource-schema
@@ -3927,8 +3924,43 @@ async function setupWorkspace() {
             // Don't call updateStatus(true) yet - wait for schema polling to complete
             // The schema polling function will handle enabling UI elements when ready
             
-            // Start polling workspace schema instead of test-connection
-            startWorkspaceSchemaPolling();
+            // Check if schema fetching is disabled
+            if (data.schema_disabled) {
+                console.log('Schema fetching disabled - workspace ready immediately');
+                // Update UI immediately without schema polling
+                updateStatus(true);
+                if (btn) {
+                    btn.classList.remove('loading');
+                    btn.classList.add('success');
+                    btn.disabled = false;
+                    btn.style.opacity = '1';
+                    btn.style.cursor = 'pointer';
+                    const label = btn.querySelector('.ws-label');
+                    if (label) {
+                        label.textContent = 'Workspace set';
+                    }
+                }
+                const setupStatus = document.getElementById('setupStatus');
+                if (setupStatus) {
+                    setupStatus.innerHTML = `
+                        <div style="margin-top: 10px; padding: 8px 12px; background: #d4edda; border: 1px solid #c3e6cb; border-radius: 6px; color: #155724; font-size: 0.9rem; display: flex; align-items: center; gap: 8px;">
+                            <span>✅ Workspace connected! Ready for queries (schema discovery disabled).</span>
+                        </div>
+                    `;
+                    setTimeout(()=>{ if(setupStatus){ setupStatus.style.display='none'; } }, 3000);
+                }
+                // Re-enable schema button (even though it won't show tables)
+                const schemaBtn = document.getElementById('showSchemaBtn');
+                if(schemaBtn){
+                    schemaBtn.disabled = false;
+                    schemaBtn.classList.remove('disabled');
+                    schemaBtn.onclick = toggleSchema;
+                    schemaBtn.title = 'Schema discovery disabled';
+                }
+            } else {
+                // Start polling workspace schema instead of test-connection
+                startWorkspaceSchemaPolling();
+            }
         } else {
             console.error('Setup failed:', data.error); // Debug log
             showError('Setup failed: ' + data.error);
@@ -3981,6 +4013,15 @@ async function setupWorkspace() {
         }
     }
 }
+
+// Attach setupWorkspace to the global window object to ensure accessibility
+window.setupWorkspace = setupWorkspace;
+
+// Attach event listener to the button
+document.getElementById('setWorkspaceBtn')?.addEventListener('click', function() {
+    console.log('Button clicked!');
+    setupWorkspace();
+});
 
 async function testConnection() {
     if (!isConnected) {
@@ -4537,6 +4578,8 @@ async function processQuestionWithRetry(question) {
                 }
 
                 const prompts = parseData.prompts;
+                const testCases = parseData.test_cases || [];
+                const inputFileType = batchFileData.name.endsWith('.csv') ? 'csv' : 'excel';
                 const totalRows = prompts.length;
                 const results = [];
                 
@@ -4545,6 +4588,7 @@ async function processQuestionWithRetry(question) {
                 // Process each prompt one by one
                 for (let i = 0; i < prompts.length; i++) {
                     const prompt = prompts[i];
+                    const testCase = testCases[i] || {};
                     const rowNum = i + 1;
                     const progressPercent = 10 + Math.floor((i / totalRows) * 85);
                     
@@ -4559,10 +4603,14 @@ async function processQuestionWithRetry(question) {
                         results.push({
                             row: rowNum,
                             prompt: '',
+                            expected_query: '',
                             status: 'skipped',
                             reason: 'Empty prompt',
                             query: '',
-                            output: ''
+                            output: '',
+                            execution_success: false,
+                            expected_rows_count: null,
+                            returned_rows_count: null
                         });
                         continue;
                     }
@@ -4577,11 +4625,21 @@ async function processQuestionWithRetry(question) {
 
                         const queryData = await queryResponse.json();
 
-                        if (queryData.success && queryData.result && queryData.result.kql) {
-                            const kqlQuery = queryData.result.kql;
+                        // Check if result is a string error message (e.g., starts with ❌)
+                        const isErrorMessage = queryData.result && typeof queryData.result === 'string' && 
+                                             (queryData.result.startsWith('❌') || queryData.result.includes('Could not translate'));
+
+                        if (queryData.success && queryData.result && queryData.result.kql_query && !isErrorMessage) {
+                            const kqlQuery = queryData.result.kql_query;
                             let queryOutput = '';
+                            let returnedRowsCount = null;
+                            let expectedRowsCount = null;
+                            let generatedTable = null;
+                            let expectedTable = null;
                             
-                            // Execute the query to get output
+                            // Execute the generated query to get output and row count
+                            let executionFailed = false;
+                            let executionError = null;
                             try {
                                 const execResponse = await fetch('/api/query-execute', {
                                     method: 'POST',
@@ -4592,45 +4650,189 @@ async function processQuestionWithRetry(question) {
                                 const execData = await execResponse.json();
                                 
                                 if (execData.success && execData.tables && execData.tables.length > 0) {
-                                    const table = execData.tables[0];
-                                    queryOutput = `Rows: ${table.row_count}, Columns: ${table.columns.length}\nColumns: ${table.columns.join(', ')}`;
+                                    generatedTable = execData.tables[0];
+                                    returnedRowsCount = generatedTable.row_count;
+                                    queryOutput = `Rows: ${generatedTable.row_count}, Columns: ${generatedTable.columns.length}\nColumns: ${generatedTable.columns.join(', ')}`;
                                 } else {
-                                    queryOutput = execData.error || 'No results';
+                                    // Execution failed
+                                    executionFailed = true;
+                                    executionError = execData.error || 'Query execution failed';
+                                    queryOutput = executionError;
                                 }
                             } catch (execError) {
-                                queryOutput = `Execution error: ${execError.message}`;
+                                executionFailed = true;
+                                executionError = `Execution error: ${execError.message}`;
+                                queryOutput = executionError;
                             }
                             
-                            updateLiveResult(rowNum, 'success', kqlQuery);
+                            // If execution failed, treat as failed status
+                            if (executionFailed) {
+                                const error = `Generated Query:\n${kqlQuery}\n\nFailed to run: ${executionError}`;
+                                updateLiveResult(rowNum, 'failed', error);
+                                results.push({
+                                    row: rowNum,
+                                    prompt: prompt,
+                                    expected_query: testCase.expected_query || '',
+                                    status: 'failed',
+                                    reason: error,
+                                    query: kqlQuery,
+                                    output: '',
+                                    execution_success: false,
+                                    expected_rows_count: null,
+                                    returned_rows_count: null
+                                });
+                                continue; // Skip to next query
+                            }
+                            
+                            // Execute expected query if available
+                            if (testCase.expected_query && testCase.expected_query.trim()) {
+                                try {
+                                    const expectedExecResponse = await fetch('/api/query-execute', {
+                                        method: 'POST',
+                                        headers: { 'Content-Type': 'application/json' },
+                                        body: JSON.stringify({ query: testCase.expected_query })
+                                    });
+                                    
+                                    const expectedExecData = await expectedExecResponse.json();
+                                    
+                                    if (expectedExecData.success && expectedExecData.tables && expectedExecData.tables.length > 0) {
+                                        expectedTable = expectedExecData.tables[0];
+                                        expectedRowsCount = expectedTable.row_count;
+                                    }
+                                } catch (expectedExecError) {
+                                    // Silently fail for expected query execution
+                                }
+                            }
+                            
+                            // Calculate score if expected query is available
+                            let scoreData = null;
+                            let finalStatus = 'success';
+                            
+                            if (testCase.expected_query && testCase.expected_query.trim() && generatedTable && expectedTable) {
+                                try {
+                                    // Convert rows to array of objects for scoring
+                                    const genResults = generatedTable.rows.map(row => {
+                                        const obj = {};
+                                        generatedTable.columns.forEach((col, idx) => {
+                                            obj[col] = row[idx];
+                                        });
+                                        return obj;
+                                    });
+                                    
+                                    const expResults = expectedTable.rows.map(row => {
+                                        const obj = {};
+                                        expectedTable.columns.forEach((col, idx) => {
+                                            obj[col] = row[idx];
+                                        });
+                                        return obj;
+                                    });
+                                    
+                                    const scoreResponse = await fetch('/api/score-query', {
+                                        method: 'POST',
+                                        headers: { 'Content-Type': 'application/json' },
+                                        body: JSON.stringify({
+                                            generated_kql: kqlQuery,
+                                            expected_kql: testCase.expected_query,
+                                            prompt: prompt,
+                                            generated_columns: generatedTable.columns,
+                                            expected_columns: expectedTable.columns,
+                                            generated_results: genResults.slice(0, 100), // Limit to 100 rows for performance
+                                            expected_results: expResults.slice(0, 100),
+                                            model: document.getElementById('model-select')?.value || 'gpt-4o-mini'
+                                        })
+                                    });
+                                    
+                                    const scoreResult = await scoreResponse.json();
+                                    if (scoreResult.success) {
+                                        scoreData = scoreResult.score;
+                                        // Determine final status based on score threshold (0.9)
+                                        finalStatus = scoreData.is_successful ? 'success' : 'wrong_query';
+                                    }
+                                } catch (scoreError) {
+                                    console.error('Scoring error:', scoreError);
+                                }
+                            }
+                            
+                            updateLiveResult(rowNum, finalStatus, kqlQuery, returnedRowsCount, scoreData);
                             results.push({
                                 row: rowNum,
-                                prompt: prompt.substring(0, 100),
-                                status: 'success',
+                                prompt: prompt,
+                                expected_query: testCase.expected_query || '',
+                                status: finalStatus,
                                 query_length: kqlQuery.length,
                                 query: kqlQuery,
-                                output: queryOutput
+                                output: queryOutput,
+                                execution_success: !queryOutput.includes('error') && !queryOutput.includes('Error'),
+                                expected_rows_count: expectedRowsCount,
+                                returned_rows_count: returnedRowsCount,
+                                score: scoreData
                             });
                         } else {
-                            const error = queryData.error || 'Failed to generate query';
-                            updateLiveResult(rowNum, 'error', error);
+                            // Check if a query was generated despite execution error
+                            const generatedQuery = queryData.result && queryData.result.kql_query;
+                            
+                            // Extract error message from result field if it's a string error, otherwise use error field
+                            let errorMsg = null;
+                            
+                            // Check for error in result.error or result.message
+                            if (queryData.result && typeof queryData.result === 'object') {
+                                if (queryData.result.error) {
+                                    // Backend now extracts innermost error, use directly
+                                    errorMsg = queryData.result.error;
+                                } else if (queryData.result.message) {
+                                    // Only treat message as error if it contains error indicators
+                                    const msg = queryData.result.message;
+                                    if (msg && (msg.includes('failed') || msg.includes('Failed') || 
+                                                msg.includes('error') || msg.includes('Error') ||
+                                                msg.startsWith('❌'))) {
+                                        // Backend now extracts innermost error, use directly
+                                        errorMsg = msg;
+                                    }
+                                }
+                            }
+                            
+                            // Fallback to other error sources
+                            if (!errorMsg) {
+                                errorMsg = queryData.error || (isErrorMessage ? queryData.result : null);
+                            }
+                            
+                            // Determine error type: generation failure vs execution failure
+                            let error;
+                            if (generatedQuery && errorMsg) {
+                                error = `Generated Query:\n${generatedQuery}\n\nFailed to run: ${errorMsg}`;
+                            } else {
+                                error = errorMsg 
+                                    ? `Failed to generate query (${errorMsg})` 
+                                    : 'Failed to generate query (no error details provided)';
+                            }
+                            
+                            updateLiveResult(rowNum, 'failed', error);
                             results.push({
                                 row: rowNum,
-                                prompt: prompt.substring(0, 100),
-                                status: 'error',
+                                prompt: prompt,
+                                expected_query: testCase.expected_query || '',
+                                status: 'failed',
                                 reason: error,
-                                query: '',
-                                output: ''
+                                query: generatedQuery || '',
+                                output: '',
+                                execution_success: false,
+                                expected_rows_count: null,
+                                returned_rows_count: null
                             });
                         }
                     } catch (error) {
-                        updateLiveResult(rowNum, 'error', error.message);
+                        updateLiveResult(rowNum, 'failed', error.message);
                         results.push({
                             row: rowNum,
-                            prompt: prompt.substring(0, 100),
-                            status: 'error',
+                            prompt: prompt,
+                            expected_query: testCase.expected_query || '',
+                            status: 'failed',
                             reason: error.message,
                             query: '',
-                            output: ''
+                            output: '',
+                            execution_success: false,
+                            expected_rows_count: null,
+                            returned_rows_count: null
                         });
                     }
                 }
@@ -4643,7 +4845,8 @@ async function processQuestionWithRetry(question) {
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         filename: batchFileName,
-                        results: results
+                        results: results,
+                        input_file_type: inputFileType
                     })
                 });
 
@@ -4662,8 +4865,12 @@ async function processQuestionWithRetry(question) {
                     const summary = {
                         total: results.length,
                         success: results.filter(r => r.status === 'success').length,
-                        errors: results.filter(r => r.status === 'error').length,
-                        skipped: results.filter(r => r.status === 'skipped').length
+                        failed: results.filter(r => r.status === 'failed').length,
+                        wrong_query: results.filter(r => r.status === 'wrong_query').length,
+                        model_info: buildData.model_info,
+                        system_prompt: buildData.system_prompt,
+                        json_report_path: buildData.json_report_path,
+                        excel_report_path: buildData.excel_report_path
                     };
 
                     // Show summary
@@ -4725,7 +4932,7 @@ async function processQuestionWithRetry(question) {
             feed.scrollTop = 0;
         }
 
-        function updateLiveResult(rowNum, status, message) {
+        function updateLiveResult(rowNum, status, message, rowCount, scoreData) {
             const resultEl = document.getElementById(`live-result-${rowNum}`);
             if (!resultEl) return;
             
@@ -4734,15 +4941,15 @@ async function processQuestionWithRetry(question) {
                 statusIcon = '✅';
                 statusColor = '#28a745';
                 statusBg = '#f0f9f4';
-                message = `Query generated (${message.length} chars)`;
-            } else if (status === 'error') {
+                // Don't modify message for success - it contains the query
+            } else if (status === 'failed') {
                 statusIcon = '❌';
                 statusColor = '#dc3545';
                 statusBg = '#fff5f5';
-            } else if (status === 'skipped') {
-                statusIcon = '⏭️';
-                statusColor = '#6c757d';
-                statusBg = '#f8f9fa';
+            } else if (status === 'wrong_query') {
+                statusIcon = '⚠️';
+                statusColor = '#ff9800';
+                statusBg = '#fff9e6';
             }
             
             resultEl.style.background = statusBg;
@@ -4752,9 +4959,38 @@ async function processQuestionWithRetry(question) {
             
             const messageEl = resultEl.querySelector('.result-message');
             if (message) {
-                messageEl.textContent = message;
+                // Check if message contains "Generated Query:" to format it specially
+                if (message.startsWith('Generated Query:')) {
+                    const parts = message.split('\n\nFailed to run: ');
+                    if (parts.length === 2) {
+                        // Format: query in grey, error in red
+                        const queryPart = parts[0].replace('Generated Query:\n', '');
+                        const errorPart = parts[1];
+                        messageEl.innerHTML = `<div style="color: #6c757d; font-family: monospace; margin-bottom: 8px;">${queryPart}</div><div style="color: ${statusColor};">Failed to run: ${errorPart}</div>`;
+                    } else {
+                        messageEl.textContent = message;
+                        messageEl.style.color = statusColor;
+                    }
+                } else if (status === 'success') {
+                    // For success: show query in grey, then execution result and score in green
+                    let resultText = rowCount !== undefined && rowCount !== null ? `Query executed (results: ${rowCount})` : 'Query executed';
+                    if (scoreData) {
+                        const c = scoreData.components;
+                        resultText += `<br><strong>Score: ${(scoreData.total_score * 100).toFixed(1)}%</strong> (${scoreData.is_successful ? 'PASS ≥90%' : 'FAIL <90%'})`;
+                        resultText += `<br><span style="font-size: 0.85em;">`;
+                        resultText += `Exec: ${(c.exec_success.score * 100).toFixed(0)}% | `;
+                        resultText += `Schema: ${(c.schema_match.score * 100).toFixed(0)}% | `;
+                        resultText += `Rows: ${(c.rows_match.score * 100).toFixed(0)}% | `;
+                        resultText += `Struct: ${(c.structural_similarity.score * 100).toFixed(0)}% | `;
+                        resultText += `LLM: ${(c.llm_grading.score * 100).toFixed(0)}%`;
+                        resultText += `</span>`;
+                    }
+                    messageEl.innerHTML = `<div style="color: #6c757d; font-family: monospace; margin-bottom: 8px;">${message}</div><div style="color: ${statusColor};">${resultText}</div>`;
+                } else {
+                    messageEl.textContent = message;
+                    messageEl.style.color = statusColor;
+                }
                 messageEl.style.display = 'block';
-                messageEl.style.color = statusColor;
             }
         }
 
@@ -4765,6 +5001,9 @@ async function processQuestionWithRetry(question) {
         }
 
         function displayBatchSummary(summary, results) {
+            const modelInfo = summary.model_info || {};
+            const systemPrompt = summary.system_prompt || 'Not available';
+            
             const summaryHtml = `
                 <div style="text-align: center; padding: 15px; background: white; border-radius: 8px;">
                     <div style="font-size: 2rem; font-weight: bold; color: #667eea;">${summary.total}</div>
@@ -4775,64 +5014,156 @@ async function processQuestionWithRetry(question) {
                     <div style="color: #666; margin-top: 5px;">Successful</div>
                 </div>
                 <div style="text-align: center; padding: 15px; background: white; border-radius: 8px;">
-                    <div style="font-size: 2rem; font-weight: bold; color: #dc3545;">❌ ${summary.errors}</div>
-                    <div style="color: #666; margin-top: 5px;">Errors</div>
+                    <div style="font-size: 2rem; font-weight: bold; color: #dc3545;">❌ ${summary.failed}</div>
+                    <div style="color: #666; margin-top: 5px;">Failed</div>
                 </div>
                 <div style="text-align: center; padding: 15px; background: white; border-radius: 8px;">
-                    <div style="font-size: 2rem; font-weight: bold; color: #6c757d;">⏭️ ${summary.skipped}</div>
-                    <div style="color: #666; margin-top: 5px;">Skipped</div>
+                    <div style="font-size: 2rem; font-weight: bold; color: #ff9800;">⚠️ ${summary.wrong_query}</div>
+                    <div style="color: #666; margin-top: 5px;">Wrong Query</div>
                 </div>
             `;
-            document.getElementById('batchSummary').innerHTML = summaryHtml;
+            document.getElementById('batchSummary').innerHTML = summaryHtml + `
+                <div style="grid-column: 1 / -1; margin-top: 20px; padding: 15px; background: white; border-radius: 8px;">
+                    <div style="font-weight: bold; color: #667eea; margin-bottom: 10px;">🤖 Model Information</div>
+                    <div style="color: #666; font-size: 0.9rem; margin-bottom: 5px;"><strong>Deployment:</strong> ${escapeHtml(modelInfo.deployment || 'Unknown')}</div>
+                    <div style="color: #666; font-size: 0.9rem; margin-bottom: 10px;"><strong>API Version:</strong> ${escapeHtml(modelInfo.api_version || 'Unknown')}</div>
+                    ${summary.json_report_path ? `<div style="color: #28a745; font-size: 0.9rem; margin-bottom: 5px;"><strong>📊 JSON Report:</strong> ${escapeHtml(summary.json_report_path)}</div>` : ''}
+                    ${summary.excel_report_path ? `<div style="color: #28a745; font-size: 0.9rem; margin-bottom: 10px;"><strong>📊 Excel Report:</strong> ${escapeHtml(summary.excel_report_path)}</div>` : ''}
+                    <div style="font-weight: bold; color: #667eea; margin-bottom: 5px;">📝 System Prompt</div>
+                    <div style="color: #666; font-size: 0.85rem; font-family: monospace; background: #f8f9fa; padding: 10px; border-radius: 4px; white-space: pre-wrap;">${escapeHtml(systemPrompt)}</div>
+                </div>
+            `;
             
             // Update counts in accordion
-            document.getElementById('errorCount').textContent = summary.errors;
-            document.getElementById('skippedCount').textContent = summary.skipped;
+            document.getElementById('failedCount').textContent = summary.failed;
+            document.getElementById('wrongQueryCount').textContent = summary.wrong_query;
             document.getElementById('successCount').textContent = summary.success;
             
             // Populate detailed lists
-            const errorsList = document.getElementById('errorsList');
-            const skippedList = document.getElementById('skippedList');
+            const failedList = document.getElementById('failedList');
+            const wrongQueryList = document.getElementById('wrongQueryList');
             const successList = document.getElementById('successList');
             
-            const errors = results.filter(r => r.status === 'error');
-            const skipped = results.filter(r => r.status === 'skipped');
+            const failed = results.filter(r => r.status === 'failed');
+            const wrongQuery = results.filter(r => r.status === 'wrong_query');
             const success = results.filter(r => r.status === 'success');
             
-            // Build errors list
-            if (errors.length > 0) {
-                errorsList.innerHTML = errors.map(r => `
+            // Build failed list (generation/execution failures)
+            if (failed.length > 0) {
+                failedList.innerHTML = failed.map(r => {
+                    let reasonHtml = escapeHtml(r.reason || 'Unknown error');
+                    
+                    // Format error message if it contains generated query
+                    if (r.reason && r.reason.startsWith('Generated Query:')) {
+                        const parts = r.reason.split('\n\nFailed to run: ');
+                        if (parts.length === 2) {
+                            const queryPart = parts[0].replace('Generated Query:\n', '');
+                            const errorPart = parts[1];
+                            reasonHtml = `<div style="color: #6c757d; font-family: monospace; white-space: pre-wrap; margin-bottom: 8px;">${escapeHtml(queryPart)}</div><div style="color: #dc3545;">Failed to run: ${escapeHtml(errorPart)}</div>`;
+                        }
+                    }
+                    
+                    // Add score information if available (for queries that ran but didn't meet threshold)
+                    let scoreHtml = '';
+                    if (r.score) {
+                        const score = r.score;
+                        const c = score.components;
+                        const scorePercent = (score.total_score * 100).toFixed(1);
+                        scoreHtml = `<div style="margin-top: 5px; font-size: 0.85rem; color: #dc3545;">
+                            <strong>Score: ${scorePercent}% (FAIL - threshold: 90%)</strong><br>
+                            <span style="font-size: 0.8rem; color: #666;">
+                                ResultEq: ${(c.result_equality.score * 100).toFixed(0)}% | 
+                                Exec: ${(c.exec_success.score * 100).toFixed(0)}% | 
+                                Schema: ${(c.schema_match.score * 100).toFixed(0)}% | 
+                                Rows: ${(c.rows_match.score * 100).toFixed(0)}% | 
+                                Struct: ${(c.structural_similarity.score * 100).toFixed(0)}% | 
+                                LLM: ${(c.llm_grading.score * 100).toFixed(0)}%
+                            </span>
+                            ${c.llm_grading.details.reasoning ? `<br><span style="font-size: 0.8rem; font-style: italic;">${escapeHtml(c.llm_grading.details.reasoning)}</span>` : ''}
+                        </div>`;
+                    }
+                    
+                    return `
                     <div style="margin-bottom: 10px; padding: 10px; background: #fff5f5; border-left: 3px solid #dc3545; border-radius: 4px;">
                         <div style="font-weight: bold; color: #dc3545; margin-bottom: 5px;">Row ${r.row}</div>
                         <div style="color: #666; margin-bottom: 5px; font-size: 0.9rem;">${escapeHtml(r.prompt || 'No prompt')}</div>
-                        <div style="color: #dc3545; font-size: 0.85rem; font-style: italic;">${escapeHtml(r.reason || 'Unknown error')}</div>
+                        <div style="font-size: 0.85rem; font-style: italic;">${reasonHtml}</div>
+                        ${scoreHtml}
                     </div>
-                `).join('');
+                    `;  
+                }).join('');
             } else {
-                errorsList.innerHTML = '<div style="color: #666; text-align: center; padding: 20px;">No errors</div>';
+                failedList.innerHTML = '<div style="color: #666; text-align: center; padding: 20px;">No failures</div>';
             }
             
-            // Build skipped list
-            if (skipped.length > 0) {
-                skippedList.innerHTML = skipped.map(r => `
-                    <div style="margin-bottom: 10px; padding: 10px; background: #f8f9fa; border-left: 3px solid #6c757d; border-radius: 4px;">
-                        <div style="font-weight: bold; color: #6c757d; margin-bottom: 5px;">Row ${r.row}</div>
-                        <div style="color: #6c757d; font-size: 0.85rem; font-style: italic;">${escapeHtml(r.reason || 'Skipped')}</div>
+            // Build wrong query list (queries that executed but scored < 0.9)
+            if (wrongQuery.length > 0) {
+                wrongQueryList.innerHTML = wrongQuery.map(r => {
+                    let scoreHtml = '';
+                    if (r.score) {
+                        const score = r.score;
+                        const c = score.components;
+                        const scorePercent = (score.total_score * 100).toFixed(1);
+                        scoreHtml = `<div style="margin-top: 5px; font-size: 0.85rem; color: #ff9800;">
+                            <strong>Score: ${scorePercent}% (Below 90% threshold)</strong><br>
+                            <span style="font-size: 0.8rem; color: #666;">
+                                ResultEq: ${(c.result_equality.score * 100).toFixed(0)}% | 
+                                Exec: ${(c.exec_success.score * 100).toFixed(0)}% | 
+                                Schema: ${(c.schema_match.score * 100).toFixed(0)}% | 
+                                Rows: ${(c.rows_match.score * 100).toFixed(0)}% | 
+                                Struct: ${(c.structural_similarity.score * 100).toFixed(0)}% | 
+                                LLM: ${(c.llm_grading.score * 100).toFixed(0)}%
+                            </span>
+                            ${c.llm_grading.details.reasoning ? `<br><span style="font-size: 0.8rem; font-style: italic;">${escapeHtml(c.llm_grading.details.reasoning)}</span>` : ''}
+                        </div>`;
+                    }
+                    
+                    return `
+                    <div style="margin-bottom: 10px; padding: 10px; background: #fff9e6; border-left: 3px solid #ff9800; border-radius: 4px;">
+                        <div style="font-weight: bold; color: #ff9800; margin-bottom: 5px;">Row ${r.row}</div>
+                        <div style="color: #666; margin-bottom: 5px; font-size: 0.9rem;">${escapeHtml(r.prompt || 'No prompt')}</div>
+                        <div style="color: #666; font-family: monospace; font-size: 0.85rem; margin-top: 5px;">${escapeHtml((r.query || '').substring(0, 200))}${r.query && r.query.length > 200 ? '...' : ''}</div>
+                        ${scoreHtml}
                     </div>
-                `).join('');
+                    `;
+                }).join('');
             } else {
-                skippedList.innerHTML = '<div style="color: #666; text-align: center; padding: 20px;">No skipped items</div>';
+                wrongQueryList.innerHTML = '<div style="color: #666; text-align: center; padding: 20px;">No wrong queries</div>';
             }
             
             // Build success list
             if (success.length > 0) {
-                successList.innerHTML = success.map(r => `
+                successList.innerHTML = success.map(r => {
+                    let scoreHtml = '';
+                    if (r.score) {
+                        const score = r.score;
+                        const c = score.components;
+                        const scorePercent = (score.total_score * 100).toFixed(1);
+                        const passStatus = score.is_successful ? 'PASS' : 'FAIL';
+                        const statusColor = score.is_successful ? '#28a745' : '#dc3545';
+                        scoreHtml = `<div style="margin-top: 5px; font-size: 0.85rem;">
+                            <strong style="color: ${statusColor};">Score: ${scorePercent}% (${passStatus})</strong><br>
+                            <span style="font-size: 0.8rem; color: #666;">
+                                ResultEq: ${(c.result_equality.score * 100).toFixed(0)}% | 
+                                Exec: ${(c.exec_success.score * 100).toFixed(0)}% | 
+                                Schema: ${(c.schema_match.score * 100).toFixed(0)}% | 
+                                Rows: ${(c.rows_match.score * 100).toFixed(0)}% | 
+                                Struct: ${(c.structural_similarity.score * 100).toFixed(0)}% | 
+                                LLM: ${(c.llm_grading.score * 100).toFixed(0)}%
+                            </span>
+                        </div>`;
+                    }
+                    
+                    return `
                     <div style="margin-bottom: 10px; padding: 10px; background: #f0f9f4; border-left: 3px solid #28a745; border-radius: 4px;">
                         <div style="font-weight: bold; color: #28a745; margin-bottom: 5px;">Row ${r.row}</div>
                         <div style="color: #666; margin-bottom: 5px; font-size: 0.9rem;">${escapeHtml(r.prompt || 'No prompt')}</div>
-                        <div style="color: #28a745; font-size: 0.85rem;">✓ Query generated (${r.query_length || 0} chars)</div>
+                        <div style="color: #6c757d; font-family: monospace; font-size: 0.85rem; margin-bottom: 5px;">${escapeHtml(r.query || '')}</div>
+                        <div style="color: #28a745; font-size: 0.85rem;">✓ Query executed (results: ${r.returned_rows_count !== undefined && r.returned_rows_count !== null ? r.returned_rows_count : 'N/A'})</div>
+                        ${scoreHtml}
                     </div>
-                `).join('');
+                    `;
+                }).join('');
             } else {
                 successList.innerHTML = '<div style="color: #666; text-align: center; padding: 20px;">No successful items</div>';
             }
