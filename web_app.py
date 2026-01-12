@@ -21,6 +21,16 @@ from werkzeug.utils import secure_filename
 # Add the project root to Python path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+# Import pandas and openpyxl for batch testing
+try:
+    import pandas as pd
+    import openpyxl
+    PANDAS_AVAILABLE = True
+except ImportError:
+    PANDAS_AVAILABLE = False
+    pd = None
+    openpyxl = None
+
 # Import the KQL agent
 from logs_agent import KQLAgent
 try:
@@ -29,7 +39,7 @@ try:
 except Exception:  # Library might not be installed yet; schema fetch will be skipped
     DefaultAzureCredential = None  # type: ignore
     LogsQueryClient = None  # type: ignore
-from example_catalog import load_example_catalog
+# from example_catalog import load_example_catalog  # Disabled
 from schema_manager import get_workspace_schema
 from examples_loader import load_capsule_csv_queries  # CSV capsule queries
 
@@ -1728,21 +1738,11 @@ def example_catalog():
 
     Expects JSON body: {"include_schema": bool, "force": bool}
     """
-    global workspace_id
-    try:
-        req = request.get_json(silent=True) or {}
-        include_schema = bool(req.get('include_schema', True))
-        force = bool(req.get('force', False))
-        catalog = load_example_catalog(workspace_id, include_schema=include_schema, force=force)
-        return jsonify({
-            'success': True,
-            'catalog': catalog
-        })
-    except Exception as e:  # Broad catch acceptable for endpoint boundary
-        return jsonify({
-            'success': False,
-            'error': str(e)
-        })
+    # Example catalog disabled - return empty catalog
+    return jsonify({
+        'success': True,
+        'catalog': {'tables': [], 'examples': []}
+    })
 
 @app.route('/static/<path:filename>')
 def static_files(filename):
@@ -1966,12 +1966,10 @@ def batch_test_parse():
             'test_cases': test_cases
         })
         
-    except ImportError:
-        return jsonify({
-            'success': False,
-            'error': 'pandas or openpyxl not installed. Run: pip install pandas openpyxl'
-        }), 500
     except Exception as e:
+        import traceback
+        error_details = traceback.format_exc()
+        print(f"[BatchParse] Error parsing Excel file: {error_details}")
         return jsonify({
             'success': False,
             'error': f'Error parsing file: {str(e)}'
@@ -2333,11 +2331,6 @@ def batch_test_upload():
             'results': results
         })
         
-    except ImportError:
-        return jsonify({
-            'success': False,
-            'error': 'pandas or openpyxl not installed. Run: pip install pandas openpyxl'
-        }), 500
     except Exception as e:
         return jsonify({
             'success': False,

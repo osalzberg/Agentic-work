@@ -5182,6 +5182,26 @@ async function processQuestionWithRetry(question) {
             }
         }
 
+        function showSuccess(message) {
+            const resultContent = document.getElementById('resultContent');
+            const timestampElement = document.getElementById('timestamp');
+            const resultsSection = document.getElementById('resultsSection');
+            
+            if (resultContent && timestampElement && resultsSection) {
+                // Make sure the results section is visible
+                resultsSection.classList.add('visible');
+                resultsSection.style.display = 'block';
+                
+                resultContent.innerHTML = `<div class="success">✅ ${message}</div>`;
+                timestampElement.textContent = `Success at: ${new Date().toLocaleString()}`;
+                
+                // Auto-hide success message after 3 seconds
+                setTimeout(() => {
+                    resultsSection.classList.remove('visible');
+                }, 3000);
+            }
+        }
+
         function downloadBatchResults() {
             if (!batchResultsData) {
                 showError('No results available to download');

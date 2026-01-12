@@ -9,3 +9,5 @@ python-dotenv
 pytest
 pandas
 openpyxl
+gunicorn
+xlrd
