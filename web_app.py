@@ -39,7 +39,7 @@ try:
 except Exception:  # Library might not be installed yet; schema fetch will be skipped
     DefaultAzureCredential = None  # type: ignore
     LogsQueryClient = None  # type: ignore
-from example_catalog import load_example_catalog
+# from example_catalog import load_example_catalog  # Disabled
 from schema_manager import get_workspace_schema
 from examples_loader import load_capsule_csv_queries  # CSV capsule queries
 
@@ -1730,21 +1730,11 @@ def example_catalog():
 
     Expects JSON body: {"include_schema": bool, "force": bool}
     """
-    global workspace_id
-    try:
-        req = request.get_json(silent=True) or {}
-        include_schema = bool(req.get('include_schema', True))
-        force = bool(req.get('force', False))
-        catalog = load_example_catalog(workspace_id, include_schema=include_schema, force=force)
-        return jsonify({
-            'success': True,
-            'catalog': catalog
-        })
-    except Exception as e:  # Broad catch acceptable for endpoint boundary
-        return jsonify({
-            'success': False,
-            'error': str(e)
-        })
+    # Example catalog disabled - return empty catalog
+    return jsonify({
+        'success': True,
+        'catalog': {'tables': [], 'examples': []}
+    })
 
 @app.route('/static/<path:filename>')
 def static_files(filename):
