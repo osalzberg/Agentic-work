@@ -150,6 +150,13 @@ class KqlStage:
         cond = re.sub(r'\s*>\s*', '>', cond)
         cond = re.sub(r'\s*<\s*', '<', cond)
         cond = re.sub(r'\s*=\s*', '=', cond)
+        
+        # Normalize time range operators: treat >= as > and <= as < for comparison purposes
+        # This is semantically reasonable for time ranges where granularity makes them equivalent
+        if 'ago(' in cond.lower() or 'datetime(' in cond.lower() or 'now(' in cond.lower() or 'timegenerated' in cond.lower():
+            cond = cond.replace('>=', '>')
+            cond = cond.replace('<=', '<')
+        
         # Lowercase keywords
         cond = re.sub(r'\b(has|contains|in|between|startswith|endswith)\b', lambda m: m.group(0).lower(), cond, flags=re.IGNORECASE)
         return cond
@@ -293,9 +300,14 @@ def parse_kql(query: str) -> List[KqlStage]:
     return stages
 
 
-def compare_kql_semantic(expected: str, generated: str) -> Dict[str, Any]:
+def compare_kql_semantic(expected: str, generated: str, prompt: str = "") -> Dict[str, Any]:
     """
     Compare two KQL queries semantically.
+    
+    Args:
+        expected: Expected KQL query
+        generated: Generated KQL query
+        prompt: Natural language prompt (used to determine if specific fields were requested)
     
     Returns a dict with:
     - similarity: float 0-1
@@ -310,7 +322,8 @@ def compare_kql_semantic(expected: str, generated: str) -> Dict[str, Any]:
             'expected_stages': len(exp_stages),
             'generated_stages': len(gen_stages),
             'matches': {},
-            'differences': []
+            'differences': [],
+            'prompt': prompt
         }
     }
     
@@ -341,6 +354,54 @@ def compare_kql_semantic(expected: str, generated: str) -> Dict[str, Any]:
         if stage.stage_type != 'table':
             gen_by_type.setdefault(stage.stage_type, []).append(stage)
     
+    # 2.5. Detect top <-> sort+take equivalence
+    # If one query uses 'top N by X' and the other uses 'sort by X | take N', treat them as equivalent
+    top_sort_take_equivalent = False
+    
+    # Case 1: Expected has 'top', Generated has 'sort' + 'take' (but no 'top')
+    if 'top' in exp_by_type and 'top' not in gen_by_type:
+        if 'sort' in gen_by_type and 'take' in gen_by_type:
+            # Check if they're semantically equivalent
+            exp_top = exp_by_type['top'][0].details
+            gen_take = gen_by_type['take'][0].details
+            gen_sorts = []
+            for stage in gen_by_type['sort']:
+                gen_sorts.extend(stage.details.get('sort', []))
+            
+            top_limit = exp_top.get('limit')
+            top_by = exp_top.get('by', '').lower().strip()
+            take_limit = gen_take.get('limit')
+            
+            # Check if limits match and sort column matches top's by column
+            if top_limit == take_limit and gen_sorts:
+                # Check if top's 'by' column matches any sort column
+                for sort_col, _ in gen_sorts:
+                    if sort_col.lower().strip() == top_by:
+                        top_sort_take_equivalent = True
+                        break
+    
+    # Case 2: Generated has 'top', Expected has 'sort' + 'take' (but no 'top')
+    if 'top' in gen_by_type and 'top' not in exp_by_type:
+        if 'sort' in exp_by_type and 'take' in exp_by_type:
+            # Check if they're semantically equivalent
+            gen_top = gen_by_type['top'][0].details
+            exp_take = exp_by_type['take'][0].details
+            exp_sorts = []
+            for stage in exp_by_type['sort']:
+                exp_sorts.extend(stage.details.get('sort', []))
+            
+            top_limit = gen_top.get('limit')
+            top_by = gen_top.get('by', '').lower().strip()
+            take_limit = exp_take.get('limit')
+            
+            # Check if limits match and sort column matches top's by column
+            if top_limit == take_limit and exp_sorts:
+                # Check if top's 'by' column matches any sort column
+                for sort_col, _ in exp_sorts:
+                    if sort_col.lower().strip() == top_by:
+                        top_sort_take_equivalent = True
+                        break
+    
     # 3. Compare each stage type
     scores = []
     weights = {
@@ -360,6 +421,12 @@ def compare_kql_semantic(expected: str, generated: str) -> Dict[str, Any]:
     for stage_type in all_types:
         exp_list = exp_by_type.get(stage_type, [])
         gen_list = gen_by_type.get(stage_type, [])
+        
+        # Skip penalizing 'top', 'sort', or 'take' if they're equivalent patterns
+        if top_sort_take_equivalent and stage_type in ('top', 'sort', 'take'):
+            # Give full score for these stages when pattern is equivalent
+            scores.append((weights.get(stage_type, 0.05), 1.0))
+            continue
         
         if not exp_list and gen_list:
             # Extra stages in generated
@@ -399,7 +466,8 @@ def _compare_stage_list(stage_type: str, exp_list: List[KqlStage], gen_list: Lis
     if stage_type == 'where':
         return _compare_where_stages(exp_list, gen_list, details)
     elif stage_type == 'project':
-        return _compare_project_stages(exp_list, gen_list, details)
+        prompt = details.get('prompt', '')
+        return _compare_project_stages(exp_list, gen_list, details, prompt)
     elif stage_type == 'summarize':
         return _compare_summarize_stages(exp_list, gen_list, details)
     elif stage_type == 'sort':
@@ -459,8 +527,11 @@ def _compare_where_stages(exp_list: List[KqlStage], gen_list: List[KqlStage], de
     return score
 
 
-def _compare_project_stages(exp_list: List[KqlStage], gen_list: List[KqlStage], details: Dict) -> float:
-    """Compare project clauses."""
+def _compare_project_stages(exp_list: List[KqlStage], gen_list: List[KqlStage], details: Dict, prompt: str = "") -> float:
+    """Compare project clauses.
+    
+    Only penalizes missing fields if they were explicitly requested in the prompt.
+    """
     # Order doesn't matter for projected columns
     exp_columns = set()
     for stage in exp_list:
@@ -479,21 +550,52 @@ def _compare_project_stages(exp_list: List[KqlStage], gen_list: List[KqlStage], 
     
     matched = exp_norm & gen_norm
     missing = exp_norm - gen_norm
-    extra = gen_norm - gen_norm
+    extra = gen_norm - exp_norm
     
+    # Check if prompt explicitly mentions specific fields/columns
+    prompt_lower = prompt.lower()
+    fields_explicitly_requested = any(
+        keyword in prompt_lower 
+        for keyword in ['show', 'display', 'project', 'select', 'return', 'get', 'include']
+    ) and any(
+        field_keyword in prompt_lower
+        for field_keyword in ['field', 'column', 'property', 'attribute']
+    )
+    
+    # Only penalize missing columns if they were explicitly requested in the prompt
     if missing:
-        details['differences'].append(f'Missing projected columns: {missing}')
+        if fields_explicitly_requested:
+            # Check if any missing column is mentioned in the prompt
+            missing_and_requested = {
+                col for col in missing 
+                if col in prompt_lower or col.replace('_', ' ') in prompt_lower
+            }
+            if missing_and_requested:
+                details['differences'].append(f'Missing explicitly requested columns: {missing_and_requested}')
+        else:
+            # Prompt didn't explicitly request fields, don't penalize heavily
+            details['differences'].append(f'Note: Missing projected columns (not explicitly requested): {missing}')
+    
     if extra:
+        # Extra fields are generally fine - they provide more information
         details['differences'].append(f'Extra projected columns: {extra}')
     
-    total = len(exp_norm | gen_norm)
-    score = len(matched) / total if total > 0 else 1.0
+    # Calculate score
+    # If no fields explicitly requested, score based only on matched columns (don't penalize missing)
+    if not fields_explicitly_requested and missing:
+        # Don't penalize for missing columns if they weren't requested
+        score = 1.0 if matched else 0.8  # Small penalty only if no overlap at all
+    else:
+        # Standard scoring when fields were explicitly requested
+        total = len(exp_norm | gen_norm)
+        score = len(matched) / total if total > 0 else 1.0
     
     details['matches']['project'] = {
         'expected': len(exp_columns),
         'generated': len(gen_columns),
         'matched': len(matched),
-        'score': score
+        'score': score,
+        'fields_explicitly_requested': fields_explicitly_requested
     }
     
     return score

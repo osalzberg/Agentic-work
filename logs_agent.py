@@ -40,17 +40,31 @@ def extract_innermost_error(error_data):
     """
     if isinstance(error_data, str):
         # Look for "Inner error:" followed by JSON structure
-        inner_error_match = re.search(r'Inner error:\s*(\{[^}]*"innererror"[^}]*\})', error_data, re.DOTALL)
-        if inner_error_match:
-            try:
-                # Extract and parse the JSON portion
-                json_str = inner_error_match.group(1)
-                # Fix formatting issues (newlines, extra spaces)
-                json_str = re.sub(r'\s+', ' ', json_str)
-                error_obj = json.loads(json_str)
-                return extract_innermost_error(error_obj)
-            except (json.JSONDecodeError, TypeError):
-                pass
+        inner_error_pos = error_data.find('Inner error:')
+        if inner_error_pos != -1:
+            # Extract everything after "Inner error:"
+            json_portion = error_data[inner_error_pos + len('Inner error:'):].strip()
+            
+            # Find the JSON object using brace matching
+            if json_portion.startswith('{'):
+                brace_count = 0
+                end_pos = 0
+                for i, char in enumerate(json_portion):
+                    if char == '{':
+                        brace_count += 1
+                    elif char == '}':
+                        brace_count -= 1
+                        if brace_count == 0:
+                            end_pos = i + 1
+                            break
+                
+                if end_pos > 0:
+                    json_str = json_portion[:end_pos]
+                    try:
+                        error_obj = json.loads(json_str)
+                        return extract_innermost_error(error_obj)
+                    except (json.JSONDecodeError, TypeError):
+                        pass
         
         # Look for the innermost "message" field using regex
         message_matches = re.findall(r'"message"\s*:\s*"([^"]+)"', error_data)
@@ -412,7 +426,7 @@ class KQLAgent:
             kql_query = translate_nl_to_kql(question)
             
             if not kql_query or kql_query.strip() == '' or kql_query.strip().startswith('// Error'):
-                return f"❌ Could not translate question to KQL after retries: {question}"
+                return f"Could not translate question to KQL after retries: {question}"
             
             print(f"📝 Generated KQL: {kql_query}")
             
@@ -433,9 +447,9 @@ class KQLAgent:
                 # Return structured data for web interface
                 return {
                     "type": "query_success",
-                    "kql_query": kql_query,
+                    "kql_query": kql_query.strip(),
                     "data": formatted_results,
-                    "message": "✅ Query executed successfully"
+                    "message": "Query executed successfully"
                 }
             else:
                 # Extract the innermost error message
@@ -443,9 +457,9 @@ class KQLAgent:
                 
                 return {
                     "type": "query_error", 
-                    "kql_query": kql_query,
+                    "kql_query": kql_query.strip(),
                     "error": error_message,
-                    "message": f"❌ Query execution failed: {error_message}"
+                    "message": f"Query execution failed: {error_message}"
                 }
                 
         except Exception as e:

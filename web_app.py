@@ -4,7 +4,7 @@ Web Interface for Natural Language KQL Agent
 A Flask web application that provides a user-friendly interface for the KQL agent
 """
 
-from flask import Flask, render_template, request, jsonify, send_from_directory, send_file
+from flask import Flask, render_template, request, jsonify, send_from_directory, send_file  # type: ignore
 import asyncio
 import time  # needed for docs enrichment timing budget
 import os
@@ -16,15 +16,15 @@ import re
 from urllib import request as urlrequest
 from urllib.error import URLError, HTTPError
 import io
-from werkzeug.utils import secure_filename
+from werkzeug.utils import secure_filename  # type: ignore
 
 # Add the project root to Python path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 # Import pandas and openpyxl for batch testing
 try:
-    import pandas as pd
-    import openpyxl
+    import pandas as pd  # type: ignore
+    import openpyxl  # type: ignore
     PANDAS_AVAILABLE = True
 except ImportError:
     PANDAS_AVAILABLE = False
@@ -1318,9 +1318,9 @@ def clear_workspace_cache():
         return jsonify({'success': False, 'error': 'Workspace not initialized'}), 400
     return jsonify({'success': True, 'workspace_id': workspace_id, 'cache_cleared': False, 'message': 'Schema caching removed; nothing to clear.'})
 
-@app.route('/api/query', methods=['POST'])
+@app.route('/api/generate-kql', methods=['POST'])
 def process_query():
-    """Process a natural language question"""
+    """Process a natural language question and generate KQL query"""
     global agent
     
     try:
@@ -1768,10 +1768,7 @@ def score_query():
         generated_results = data.get('generated_results', [])
         expected_results = data.get('expected_results', [])
         
-        # Model for LLM grading
-        model = data.get('model', 'gpt-4o-mini')
-        
-        # Calculate score
+        # Calculate score (uses same Azure OpenAI deployment as query generation)
         score_result = calculate_total_score(
             generated_kql=generated_kql,
             expected_kql=expected_kql,
@@ -1779,8 +1776,7 @@ def score_query():
             expected_columns=expected_columns,
             generated_results=generated_results,
             expected_results=expected_results,
-            prompt=prompt,
-            model=model
+            prompt=prompt
         )
         
         return jsonify({
@@ -1795,29 +1791,17 @@ def score_query():
             'traceback': traceback.format_exc()
         }), 500
 
-@app.route('/api/query-execute', methods=['POST'])
-def query_execute():
-    """Execute a KQL query and return results."""
-    global agent
+def _execute_kql_query(query: str):
+    """Internal helper to execute a KQL query and return results.
+    
+    Returns:
+        dict with 'success', 'tables' (if successful), or 'error' (if failed)
+    """
+    from azure.identity import DefaultAzureCredential  # type: ignore
+    from azure.monitor.query import LogsQueryClient, LogsQueryStatus  # type: ignore
+    from logs_agent import extract_innermost_error
     
     try:
-        if not agent:
-            return jsonify({
-                'success': False, 
-                'error': 'Agent not initialized. Please setup workspace first.'
-            }), 400
-        
-        data = request.get_json()
-        query = data.get('query', '').strip()
-        
-        if not query:
-            return jsonify({'success': False, 'error': 'Query is required'}), 400
-        
-        # Execute the query using the agent's client
-        from azure.identity import DefaultAzureCredential
-        from azure.monitor.query import LogsQueryClient, LogsQueryStatus
-        from datetime import datetime, timedelta, timezone
-        
         credential = DefaultAzureCredential()
         client = LogsQueryClient(credential)
         
@@ -1865,13 +1849,170 @@ def query_execute():
                 }
                 tables.append(table_dict)
             
-            return jsonify({'success': True, 'tables': tables})
+            return {'success': True, 'tables': tables}
         else:
             error_msg = getattr(response, 'partial_error', 'Query failed')
-            return jsonify({'success': False, 'error': str(error_msg)})
+            innermost_error = extract_innermost_error(str(error_msg))
+            return {'success': False, 'error': innermost_error}
             
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)})
+        from logs_agent import extract_innermost_error
+        innermost_error = extract_innermost_error(str(e))
+        return {'success': False, 'error': innermost_error}
+
+
+@app.route('/api/evaluate-query', methods=['POST'])
+def evaluate_query():
+    """Evaluate a generated query against an expected query.
+    
+    This endpoint:
+    1. Executes the generated query
+    2. If successful, executes the expected query
+    3. Compares results (all rows, not limited)
+    4. Performs LLM scoring
+    5. Returns complete evaluation
+    
+    Request body:
+        prompt: str - The natural language prompt
+        generated_query: str - The generated KQL query
+        expected_query: str - The expected KQL query
+    
+    Response:
+        success: bool
+        execution_success: bool - Whether both queries executed successfully
+        generated_error: str (optional) - Error from generated query
+        expected_error: str (optional) - Error from expected query
+        score: dict (optional) - Scoring results if both queries succeeded
+    """
+    global agent
+    
+    try:
+        if not agent:
+            return jsonify({
+                'success': False, 
+                'error': 'Agent not initialized. Please setup workspace first.'
+            }), 400
+        
+        data = request.get_json()
+        prompt = data.get('prompt', '').strip()
+        generated_query = data.get('generated_query', '').strip()
+        expected_query = data.get('expected_query', '').strip()
+        
+        if not generated_query:
+            return jsonify({'success': False, 'error': 'Generated query is required'}), 400
+        if not expected_query:
+            return jsonify({'success': False, 'error': 'Expected query is required'}), 400
+        
+        # Execute generated query
+        gen_result = _execute_kql_query(generated_query)
+        
+        if not gen_result['success']:
+            # Generated query failed
+            return jsonify({
+                'success': True,
+                'execution_success': False,
+                'generated_error': gen_result['error'],
+                'expected_error': None,
+                'score': None
+            })
+        
+        # Execute expected query
+        exp_result = _execute_kql_query(expected_query)
+        
+        if not exp_result['success']:
+            # Expected query failed (this shouldn't normally happen)
+            return jsonify({
+                'success': True,
+                'execution_success': False,
+                'generated_error': None,
+                'expected_error': exp_result['error'],
+                'score': None
+            })
+        
+        # Both queries succeeded - extract results for comparison
+        gen_tables = gen_result['tables']
+        exp_tables = exp_result['tables']
+        
+        # Use first table from each result (standard case)
+        gen_table = gen_tables[0] if gen_tables else {'columns': [], 'rows': []}
+        exp_table = exp_tables[0] if exp_tables else {'columns': [], 'rows': []}
+        
+        gen_columns = gen_table.get('columns', [])
+        exp_columns = exp_table.get('columns', [])
+        gen_rows = gen_table.get('rows', [])
+        exp_rows = exp_table.get('rows', [])
+        
+        # Convert rows to list of dicts for scoring
+        gen_results = []
+        for row in gen_rows:
+            obj = {}
+            for idx, col in enumerate(gen_columns):
+                if idx < len(row):
+                    obj[col] = row[idx]
+            gen_results.append(obj)
+        
+        exp_results = []
+        for row in exp_rows:
+            obj = {}
+            for idx, col in enumerate(exp_columns):
+                if idx < len(row):
+                    obj[col] = row[idx]
+            exp_results.append(obj)
+        
+        # Calculate score with ALL rows (no limit)
+        from query_scorer import calculate_total_score
+        
+        score_result = calculate_total_score(
+            generated_kql=generated_query,
+            expected_kql=expected_query,
+            generated_columns=gen_columns,
+            expected_columns=exp_columns,
+            generated_results=gen_results,
+            expected_results=exp_results,
+            prompt=prompt
+        )
+        
+        return jsonify({
+            'success': True,
+            'execution_success': True,
+            'generated_error': None,
+            'expected_error': None,
+            'score': score_result
+        })
+        
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e),
+            'traceback': traceback.format_exc()
+        }), 500
+
+
+@app.route('/api/query-execute', methods=['POST'])
+def query_execute():
+    """Execute a KQL query and return results."""
+    global agent
+    
+    try:
+        if not agent:
+            return jsonify({
+                'success': False, 
+                'error': 'Agent not initialized. Please setup workspace first.'
+            }), 400
+        
+        data = request.get_json()
+        query = data.get('query', '').strip()
+        
+        if not query:
+            return jsonify({'success': False, 'error': 'Query is required'}), 400
+        
+        result = _execute_kql_query(query)
+        return jsonify(result)
+            
+    except Exception as e:
+        from logs_agent import extract_innermost_error
+        innermost_error = extract_innermost_error(str(e))
+        return jsonify({'success': False, 'error': innermost_error})
 
 
 @app.route('/api/batch-test/parse', methods=['POST'])
@@ -2046,20 +2187,14 @@ def batch_test_build():
                 components = score.get('components', {})
                 row_data['Total Score'] = score.get('total_score', 0)
                 row_data['Score Status'] = 'PASS' if score.get('is_successful', False) else 'FAIL'
-                row_data['Result Equality Score'] = components.get('result_equality', {}).get('score', 0)
-                row_data['Execution Success Score'] = components.get('exec_success', {}).get('score', 0)
-                row_data['Schema Match Score'] = components.get('schema_match', {}).get('score', 0)
-                row_data['Rows Match Score'] = components.get('rows_match', {}).get('score', 0)
+                row_data['Results Match Score'] = components.get('results_match', {}).get('score', 0)
                 row_data['Structural Similarity Score'] = components.get('structural_similarity', {}).get('score', 0)
                 row_data['LLM Grading Score'] = components.get('llm_grading', {}).get('score', 0)
                 row_data['LLM Reasoning'] = components.get('llm_grading', {}).get('details', {}).get('reasoning', '')
             else:
                 row_data['Total Score'] = None
                 row_data['Score Status'] = 'N/A'
-                row_data['Result Equality Score'] = None
-                row_data['Execution Success Score'] = None
-                row_data['Schema Match Score'] = None
-                row_data['Rows Match Score'] = None
+                row_data['Results Match Score'] = None
                 row_data['Structural Similarity Score'] = None
                 row_data['LLM Grading Score'] = None
                 row_data['LLM Reasoning'] = ''

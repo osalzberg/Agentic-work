@@ -1881,16 +1881,14 @@
               
             <!-- Batch Testing Section -->
             <div class="query-section" style="margin-top: 30px; border-top: 3px solid #e9ecef; padding-top: 30px;">
-                <h2>📊 Batch Test Queries</h2>
-                <p style="color: #666; margin-bottom: 15px;">Upload an Excel file with prompts and download results with generated KQL queries</p>
+                <h2>📊 Benchmark query generation and result summarization</h2>
+                <p style="color: #666; margin-bottom: 15px;">Upload an Excel/CSV file with prompts and expected KQL queries to get benchmark results</p>
                 
                 <div style="background: #f8f9fa; border-radius: 12px; padding: 20px; margin-bottom: 20px;">
-                    <h4 style="margin-bottom: 10px; color: #333;">📋 Excel File Format:</h4>
+                    <h4 style="margin-bottom: 10px; color: #333;">📋 File Format:</h4>
                     <ul style="margin-left: 20px; color: #666; line-height: 1.8;">
-                        <li><strong>Column 1 - Prompt:</strong> Your natural language questions (required)</li>
-                        <li><strong>Column 2 - Expected Query:</strong> Optional reference (ignored by system)</li>
-                        <li><strong>Column 3 - Generated Query:</strong> Will be filled with KQL output</li>
-                        <li><strong>Column 4 - Reason:</strong> Will be filled with success/error status</li>
+                        <li><strong>Column 1 - Prompt:</strong> Your natural language questions</li>
+                        <li><strong>Column 2 - Expected Query:</strong> KQL reference to compare to</li>
                     </ul>
                 </div>
 
@@ -2631,7 +2629,7 @@ async function askQuestion() {
     setTimeout(() => updateLoadingStep('step-translate', 'active'), 200);
     
     try {
-        const response = await fetch('/api/query', {
+        const response = await fetch('/api/generate-kql', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ question: question })
@@ -2765,7 +2763,7 @@ async function processQuestionWithRetry(question) {
             
             // Make the actual API call
             updateProgress(40, '📡 Sending request to server...');
-            const response = await fetch('/api/query', {
+            const response = await fetch('/api/generate-kql', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ question: question })
@@ -4070,7 +4068,7 @@ async function askQuestion() {
     setTimeout(() => updateLoadingStep('step-translate', 'active'), 200);
     
     try {
-        const response = await fetch('/api/query', {
+        const response = await fetch('/api/generate-kql', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ question: question })
@@ -4201,7 +4199,7 @@ async function processQuestionWithRetry(question) {
             
             // Make the actual API call
             updateProgress(40, '📡 Sending request to server...');
-            const response = await fetch('/api/query', {
+            const response = await fetch('/api/generate-kql', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ question: question })
@@ -4617,7 +4615,7 @@ async function processQuestionWithRetry(question) {
 
                     try {
                         // Call the query API for each prompt
-                        const queryResponse = await fetch('/api/query', {
+                        const queryResponse = await fetch('/api/generate-kql', {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify({ question: prompt })
@@ -4632,37 +4630,92 @@ async function processQuestionWithRetry(question) {
                         if (queryData.success && queryData.result && queryData.result.kql_query && !isErrorMessage) {
                             const kqlQuery = queryData.result.kql_query;
                             let queryOutput = '';
+                            
+                            // Evaluate query (execute + score in backend)
                             let returnedRowsCount = null;
                             let expectedRowsCount = null;
-                            let generatedTable = null;
-                            let expectedTable = null;
-                            
-                            // Execute the generated query to get output and row count
+                            let scoreData = null;
+                            let finalStatus = 'success';
                             let executionFailed = false;
                             let executionError = null;
-                            try {
-                                const execResponse = await fetch('/api/query-execute', {
-                                    method: 'POST',
-                                    headers: { 'Content-Type': 'application/json' },
-                                    body: JSON.stringify({ query: kqlQuery })
-                                });
-                                
-                                const execData = await execResponse.json();
-                                
-                                if (execData.success && execData.tables && execData.tables.length > 0) {
-                                    generatedTable = execData.tables[0];
-                                    returnedRowsCount = generatedTable.row_count;
-                                    queryOutput = `Rows: ${generatedTable.row_count}, Columns: ${generatedTable.columns.length}\nColumns: ${generatedTable.columns.join(', ')}`;
-                                } else {
-                                    // Execution failed
+                            
+                            if (testCase.expected_query && testCase.expected_query.trim()) {
+                                try {
+                                    const evalResponse = await fetch('/api/evaluate-query', {
+                                        method: 'POST',
+                                        headers: { 'Content-Type': 'application/json' },
+                                        body: JSON.stringify({
+                                            prompt: prompt,
+                                            generated_query: kqlQuery,
+                                            expected_query: testCase.expected_query
+                                        })
+                                    });
+                                    
+                                    const evalData = await evalResponse.json();
+                                    
+                                    if (evalData.success) {
+                                        if (evalData.execution_success) {
+                                            // Both queries executed successfully
+                                            scoreData = evalData.score;
+                                            
+                                            // Extract row counts from score details if available
+                                            if (scoreData && scoreData.components && scoreData.components.results_match) {
+                                                const rowsDetails = scoreData.components.results_match.details?.rows_details;
+                                                if (rowsDetails) {
+                                                    returnedRowsCount = rowsDetails.actual_count;
+                                                    expectedRowsCount = rowsDetails.expected_count;
+                                                }
+                                            }
+                                            
+                                            queryOutput = `Rows: ${returnedRowsCount || 'N/A'}, Score: ${scoreData.total_score.toFixed(2)}`;
+                                            finalStatus = scoreData.is_successful ? 'success' : 'wrong_query';
+                                        } else {
+                                            // Execution failed
+                                            executionFailed = true;
+                                            executionError = evalData.generated_error || evalData.expected_error || 'Query execution failed';
+                                            queryOutput = executionError;
+                                            finalStatus = 'failed';
+                                        }
+                                    } else {
+                                        // Evaluation endpoint error
+                                        executionFailed = true;
+                                        executionError = evalData.error || 'Evaluation failed';
+                                        queryOutput = executionError;
+                                        finalStatus = 'failed';
+                                    }
+                                } catch (evalError) {
                                     executionFailed = true;
-                                    executionError = execData.error || 'Query execution failed';
+                                    executionError = `Evaluation error: ${evalError.message}`;
                                     queryOutput = executionError;
+                                    finalStatus = 'failed';
                                 }
-                            } catch (execError) {
-                                executionFailed = true;
-                                executionError = `Execution error: ${execError.message}`;
-                                queryOutput = executionError;
+                            } else {
+                                // No expected query - just execute to verify it runs
+                                try {
+                                    const execResponse = await fetch('/api/query-execute', {
+                                        method: 'POST',
+                                        headers: { 'Content-Type': 'application/json' },
+                                        body: JSON.stringify({ query: kqlQuery })
+                                    });
+                                    
+                                    const execData = await execResponse.json();
+                                    
+                                    if (execData.success && execData.tables && execData.tables.length > 0) {
+                                        const table = execData.tables[0];
+                                        returnedRowsCount = table.row_count;
+                                        queryOutput = `Rows: ${table.row_count}, Columns: ${table.columns.length}\nColumns: ${table.columns.join(', ')}`;
+                                    } else {
+                                        executionFailed = true;
+                                        executionError = execData.error || 'Query execution failed';
+                                        queryOutput = executionError;
+                                        finalStatus = 'failed';
+                                    }
+                                } catch (execError) {
+                                    executionFailed = true;
+                                    executionError = `Execution error: ${execError.message}`;
+                                    queryOutput = executionError;
+                                    finalStatus = 'failed';
+                                }
                             }
                             
                             // If execution failed, treat as failed status
@@ -4684,75 +4737,6 @@ async function processQuestionWithRetry(question) {
                                 continue; // Skip to next query
                             }
                             
-                            // Execute expected query if available
-                            if (testCase.expected_query && testCase.expected_query.trim()) {
-                                try {
-                                    const expectedExecResponse = await fetch('/api/query-execute', {
-                                        method: 'POST',
-                                        headers: { 'Content-Type': 'application/json' },
-                                        body: JSON.stringify({ query: testCase.expected_query })
-                                    });
-                                    
-                                    const expectedExecData = await expectedExecResponse.json();
-                                    
-                                    if (expectedExecData.success && expectedExecData.tables && expectedExecData.tables.length > 0) {
-                                        expectedTable = expectedExecData.tables[0];
-                                        expectedRowsCount = expectedTable.row_count;
-                                    }
-                                } catch (expectedExecError) {
-                                    // Silently fail for expected query execution
-                                }
-                            }
-                            
-                            // Calculate score if expected query is available
-                            let scoreData = null;
-                            let finalStatus = 'success';
-                            
-                            if (testCase.expected_query && testCase.expected_query.trim() && generatedTable && expectedTable) {
-                                try {
-                                    // Convert rows to array of objects for scoring
-                                    const genResults = generatedTable.rows.map(row => {
-                                        const obj = {};
-                                        generatedTable.columns.forEach((col, idx) => {
-                                            obj[col] = row[idx];
-                                        });
-                                        return obj;
-                                    });
-                                    
-                                    const expResults = expectedTable.rows.map(row => {
-                                        const obj = {};
-                                        expectedTable.columns.forEach((col, idx) => {
-                                            obj[col] = row[idx];
-                                        });
-                                        return obj;
-                                    });
-                                    
-                                    const scoreResponse = await fetch('/api/score-query', {
-                                        method: 'POST',
-                                        headers: { 'Content-Type': 'application/json' },
-                                        body: JSON.stringify({
-                                            generated_kql: kqlQuery,
-                                            expected_kql: testCase.expected_query,
-                                            prompt: prompt,
-                                            generated_columns: generatedTable.columns,
-                                            expected_columns: expectedTable.columns,
-                                            generated_results: genResults.slice(0, 100), // Limit to 100 rows for performance
-                                            expected_results: expResults.slice(0, 100),
-                                            model: document.getElementById('model-select')?.value || 'gpt-4o-mini'
-                                        })
-                                    });
-                                    
-                                    const scoreResult = await scoreResponse.json();
-                                    if (scoreResult.success) {
-                                        scoreData = scoreResult.score;
-                                        // Determine final status based on score threshold (0.9)
-                                        finalStatus = scoreData.is_successful ? 'success' : 'wrong_query';
-                                    }
-                                } catch (scoreError) {
-                                    console.error('Scoring error:', scoreError);
-                                }
-                            }
-                            
                             updateLiveResult(rowNum, finalStatus, kqlQuery, returnedRowsCount, scoreData);
                             results.push({
                                 row: rowNum,
@@ -4762,7 +4746,7 @@ async function processQuestionWithRetry(question) {
                                 query_length: kqlQuery.length,
                                 query: kqlQuery,
                                 output: queryOutput,
-                                execution_success: !queryOutput.includes('error') && !queryOutput.includes('Error'),
+                                execution_success: !executionFailed,
                                 expected_rows_count: expectedRowsCount,
                                 returned_rows_count: returnedRowsCount,
                                 score: scoreData
@@ -5072,10 +5056,7 @@ async function processQuestionWithRetry(question) {
                         scoreHtml = `<div style="margin-top: 5px; font-size: 0.85rem; color: #dc3545;">
                             <strong>Score: ${scorePercent}% (FAIL - threshold: 90%)</strong><br>
                             <span style="font-size: 0.8rem; color: #666;">
-                                ResultEq: ${(c.result_equality.score * 100).toFixed(0)}% | 
-                                Exec: ${(c.exec_success.score * 100).toFixed(0)}% | 
-                                Schema: ${(c.schema_match.score * 100).toFixed(0)}% | 
-                                Rows: ${(c.rows_match.score * 100).toFixed(0)}% | 
+                                Results: ${(c.results_match.score * 100).toFixed(0)}% | 
                                 Struct: ${(c.structural_similarity.score * 100).toFixed(0)}% | 
                                 LLM: ${(c.llm_grading.score * 100).toFixed(0)}%
                             </span>
@@ -5107,10 +5088,7 @@ async function processQuestionWithRetry(question) {
                         scoreHtml = `<div style="margin-top: 5px; font-size: 0.85rem; color: #ff9800;">
                             <strong>Score: ${scorePercent}% (Below 90% threshold)</strong><br>
                             <span style="font-size: 0.8rem; color: #666;">
-                                ResultEq: ${(c.result_equality.score * 100).toFixed(0)}% | 
-                                Exec: ${(c.exec_success.score * 100).toFixed(0)}% | 
-                                Schema: ${(c.schema_match.score * 100).toFixed(0)}% | 
-                                Rows: ${(c.rows_match.score * 100).toFixed(0)}% | 
+                                Results: ${(c.results_match.score * 100).toFixed(0)}% | 
                                 Struct: ${(c.structural_similarity.score * 100).toFixed(0)}% | 
                                 LLM: ${(c.llm_grading.score * 100).toFixed(0)}%
                             </span>
@@ -5144,10 +5122,7 @@ async function processQuestionWithRetry(question) {
                         scoreHtml = `<div style="margin-top: 5px; font-size: 0.85rem;">
                             <strong style="color: ${statusColor};">Score: ${scorePercent}% (${passStatus})</strong><br>
                             <span style="font-size: 0.8rem; color: #666;">
-                                ResultEq: ${(c.result_equality.score * 100).toFixed(0)}% | 
-                                Exec: ${(c.exec_success.score * 100).toFixed(0)}% | 
-                                Schema: ${(c.schema_match.score * 100).toFixed(0)}% | 
-                                Rows: ${(c.rows_match.score * 100).toFixed(0)}% | 
+                                Results: ${(c.results_match.score * 100).toFixed(0)}% | 
                                 Struct: ${(c.structural_similarity.score * 100).toFixed(0)}% | 
                                 LLM: ${(c.llm_grading.score * 100).toFixed(0)}%
                             </span>
@@ -5236,3 +5211,4 @@ async function processQuestionWithRetry(question) {
     </script>
 </body>
 </html>
+
