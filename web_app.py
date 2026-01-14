@@ -2223,17 +2223,67 @@ def batch_test_build():
                 components = score.get('components', {})
                 row_data['Total Score'] = score.get('total_score', 0)
                 row_data['Score Status'] = 'PASS' if score.get('is_successful', False) else 'FAIL'
-                row_data['Results Match Score'] = components.get('results_match', {}).get('score', 0)
-                row_data['Structural Similarity Score'] = components.get('structural_similarity', {}).get('score', 0)
-                row_data['LLM Grading Score'] = components.get('llm_grading', {}).get('score', 0)
-                row_data['LLM Reasoning'] = components.get('llm_grading', {}).get('details', {}).get('reasoning', '')
+                # Results match (if consumer provides it)
+                # Prefer canonical nested components.results_match.components values
+                results_match_score = None
+                schema_match_score = None
+                rows_match_score = None
+                # Try canonical flattened numeric fields first
+                if 'results_match' in score:
+                    try:
+                        results_match_score = float(score.get('results_match'))
+                    except Exception:
+                        results_match_score = None
+                # Try to read from nested components structure
+                try:
+                    rm = components.get('results_match', {}) if isinstance(components, dict) else {}
+                    if isinstance(rm, dict) and 'score' in rm:
+                        results_match_score = float(rm.get('score'))
+                    comps = rm.get('components', {}) if isinstance(rm, dict) else {}
+                    if isinstance(comps, dict):
+                        if 'schema_match' in comps and isinstance(comps.get('schema_match'), dict) and 'score' in comps.get('schema_match'):
+                            schema_match_score = float(comps.get('schema_match').get('score'))
+                        if 'rows_match' in comps and isinstance(comps.get('rows_match'), dict) and 'score' in comps.get('rows_match'):
+                            rows_match_score = float(comps.get('rows_match').get('score'))
+                except Exception:
+                    schema_match_score = None
+                    rows_match_score = None
+
+                # Fallback: try to read comparator details if available in legacy fields
+                if schema_match_score is None or rows_match_score is None:
+                    schema_result = score.get('schema_result', {}) or {}
+                    rows_result = score.get('rows_result', {}) or {}
+                    try:
+                        if schema_match_score is None:
+                            schema_match_score = float(schema_result.get('details', {}).get('overlap_ratio', 0.0) or 0.0)
+                    except Exception:
+                        schema_match_score = 0.0
+                    try:
+                        if rows_match_score is None:
+                            rows_match_score = float(rows_result.get('details', {}).get('overlap_ratio', 0.0) or 0.0)
+                    except Exception:
+                        rows_match_score = 0.0
+
+                # Derive results_match_score if still missing
+                if results_match_score is None:
+                    try:
+                        results_match_score = (float(schema_match_score or 0.0) + float(rows_match_score or 0.0)) / 2.0
+                    except Exception:
+                        results_match_score = 0.0
+
+                row_data['Results Match Score'] = round(float(results_match_score), 3)
+                row_data['Schema Match Score'] = round(float(schema_match_score or 0.0), 3)
+                row_data['Rows Match Score'] = round(float(rows_match_score or 0.0), 3)
+                # Query similarity (LLM-only canonical field)
+                query_sim = score.get('query_similarity') if 'query_similarity' in score else None
+                row_data['Query Similarity Score'] = query_sim if query_sim is not None else 0
             else:
                 row_data['Total Score'] = None
                 row_data['Score Status'] = 'N/A'
                 row_data['Results Match Score'] = None
-                row_data['Structural Similarity Score'] = None
-                row_data['LLM Grading Score'] = None
-                row_data['LLM Reasoning'] = ''
+                row_data['Schema Match Score'] = None
+                row_data['Rows Match Score'] = None
+                row_data['Query Similarity Score'] = None
             
             rows.append(row_data)
         
@@ -2263,6 +2313,19 @@ def batch_test_build():
         excel_report_path = os.path.join(reports_dir, excel_filename)
         
         # Save JSON report
+        # Build sanitized JSON report. Include deterministic comparison details and LLM query similarity
+        def _strip_reasoning(obj):
+            if isinstance(obj, dict):
+                cleaned = {}
+                for k, v in obj.items():
+                    if k in ('reasoning', 'explanation', 'llm_reasoning', 'llm_explanation'):
+                        continue
+                    cleaned[k] = _strip_reasoning(v)
+                return cleaned
+            if isinstance(obj, list):
+                return [_strip_reasoning(i) for i in obj]
+            return obj
+
         json_data = {
             'metadata': {
                 'model': model_deployment,
@@ -2276,7 +2339,97 @@ def batch_test_build():
                     'wrong_query': wrong_query_count
                 }
             },
-            'results': [{
+            'results': []
+        }
+
+        for r in results:
+            orig_score = r.get('score') or {}
+            sanitized_score = {}
+            # Include canonical numeric fields and deterministic comparison results
+            for k in ('total_score', 'is_successful', 'query_similarity', 'results_match', 'results_match_score'):
+                if k in orig_score:
+                    sanitized_score[k] = orig_score[k]
+            # Build normalized components (Pattern 1) for export. Prefer canonical fields but fall back gracefully.
+            orig_components = _strip_reasoning(orig_score.get('components', {})) if 'components' in orig_score else {}
+
+            # Extract query similarity (LLM) from known locations or components
+            qsim = None
+            if 'query_similarity' in orig_score:
+                try:
+                    qsim = float(orig_score.get('query_similarity'))
+                except Exception:
+                    qsim = None
+            # Do not accept legacy 'llm_score' as a fallback; require canonical 'query_similarity' or components.llm_grading
+            if qsim is None and isinstance(orig_components, dict):
+                lg = orig_components.get('llm_grading') or orig_components.get('llm_grade') or orig_components.get('query_similarity')
+                if isinstance(lg, dict) and 'score' in lg:
+                    try:
+                        qsim = float(lg.get('score'))
+                    except Exception:
+                        qsim = None
+
+            # Extract results_match numeric score
+            rmatch = None
+            if 'results_match' in orig_score:
+                try:
+                    rmatch = float(orig_score.get('results_match'))
+                except Exception:
+                    rmatch = None
+            if rmatch is None and isinstance(orig_components, dict):
+                rm = orig_components.get('results_match')
+                if isinstance(rm, dict) and 'score' in rm:
+                    try:
+                        rmatch = float(rm.get('score'))
+                    except Exception:
+                        rmatch = None
+
+            # If still None, attempt to compute from comparator details if available (but do not export raw comparator dicts)
+            schema_overlap = 0.0
+            rows_overlap = 0.0
+            schema_result = orig_score.get('schema_result', {}) or {}
+            rows_result = orig_score.get('rows_result', {}) or {}
+            try:
+                schema_overlap = float(schema_result.get('details', {}).get('overlap_ratio', 0.0) or 0.0)
+            except Exception:
+                schema_overlap = 0.0
+            try:
+                rows_overlap = float(rows_result.get('details', {}).get('overlap_ratio', 0.0) or 0.0)
+            except Exception:
+                rows_overlap = 0.0
+
+            if rmatch is None:
+                rmatch = (schema_overlap + rows_overlap) / 2.0
+
+            # Default qsim to neutral 0.5 if missing
+            if qsim is None:
+                qsim = 0.5
+
+            # Use same weights as scorer
+            results_weight = 0.5
+            query_weight = 0.5
+
+            normalized_components = {
+                'query_similarity': {
+                    'score': round(float(qsim), 3),
+                    'weight': query_weight,
+                    'weighted_score': round(float(qsim) * query_weight, 3)
+                },
+                'results_match': {
+                    'score': round(float(rmatch), 3),
+                    'weight': results_weight,
+                    'weighted_score': round(float(rmatch) * results_weight, 3),
+                    'components': {
+                        'schema_match': {'score': round(float(schema_overlap), 3)},
+                        'rows_match': {'score': round(float(rows_overlap), 3)}
+                    }
+                }
+            }
+
+            sanitized_score['components'] = normalized_components
+            sanitized_score['query_similarity'] = round(float(qsim), 3)
+            sanitized_score['results_match'] = round(float(rmatch), 3)
+
+            json_data['results'].append({
                 'prompt': r.get('prompt', ''),
                 'expected_query': r.get('expected_query', ''),
                 'generated_query': r.get('query', ''),
@@ -2284,9 +2437,8 @@ def batch_test_build():
                 'expected_rows_count': r.get('expected_rows_count'),
                 'returned_rows_count': r.get('returned_rows_count'),
                 'summary': r.get('reason', ''),
-                'score': r.get('score')  # Include full score object if available
-            } for r in results]
-        }
+                'score': sanitized_score
+            })
         
         import json
         with open(json_report_path, 'w', encoding='utf-8') as f:

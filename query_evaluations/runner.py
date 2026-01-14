@@ -381,6 +381,8 @@ def main() -> None:
                 "rows_match": {"na": True},
                 "exec_error": None,
                 "query_generation_error": gen_kql.strip(),
+                "expected_rows_count": None,
+                "returned_rows_count": None,
                 "has_results": False,
                 "gen_statistics": None,
                 "exp_statistics": None,
@@ -463,6 +465,8 @@ def main() -> None:
                 "rows_match": {"na": True},
                 "exec_error": exec_error,
                 "critical_issue": critical_issue,
+                "expected_rows_count": None,
+                "returned_rows_count": None,
                 "has_results": False,
                 "gen_statistics": exec_out.get("statistics"),
                 "exp_statistics": None,
@@ -497,6 +501,8 @@ def main() -> None:
                 "schema_match": {"different_tables": True},
                 "rows_match": {"different_tables": True},
                 "exec_error": None,
+                "expected_rows_count": len(exp_rows) if isinstance(exp_rows, list) else None,
+                "returned_rows_count": len(exec_out.get("rows") or []),
                 "has_results": False,
                 "gen_statistics": None,
                 "llm_graded_similarity_score": 0.0,
@@ -690,17 +696,62 @@ def main() -> None:
         if not gates_ok:
             score = 0.0
 
+        # Normalize the score output to canonical schema used by the web exporter:
+        # - total_score: numeric
+        # - is_successful: bool
+        # - weights: copy of weights used
+        # - components: { query_similarity: {...}, results_match: { score, components: { schema_match, rows_match } } }
+        try:
+            total_score_val = float(score) if isinstance(score, (int, float)) else None
+        except Exception:
+            total_score_val = None
+
+        # Build query similarity from llm_graded_similarity if present
+        qsim_val = llm_graded_similarity if isinstance(llm_graded_similarity, (int, float)) else None
+
+        schema_overlap = float(schema_match.get("details", {}).get("overlap_ratio", 0.0) if isinstance(schema_match, dict) else 0.0)
+        rows_overlap = float(rows_match.get("details", {}).get("overlap_ratio", 0.0) if isinstance(rows_match, dict) else 0.0)
+        results_match_val = (schema_overlap + rows_overlap) / 2.0
+
+        components_obj = {
+            "query_similarity": {
+                "score": round(float(qsim_val) if qsim_val is not None else 0.5, 3),
+                "weight": DEFAULT_WEIGHTS.get("llm_graded_similarity", 0.3) if DEFAULT_WEIGHTS else 0.5,
+                "weighted_score": round((float(qsim_val) if qsim_val is not None else 0.5) * (DEFAULT_WEIGHTS.get("llm_graded_similarity", 0.3) if DEFAULT_WEIGHTS else 0.5), 3)
+            },
+            "results_match": {
+                "score": round(results_match_val, 3),
+                "weight": DEFAULT_WEIGHTS.get("result_equality", 0.7) if DEFAULT_WEIGHTS else 0.5,
+                "weighted_score": round(results_match_val * (DEFAULT_WEIGHTS.get("result_equality", 0.7) if DEFAULT_WEIGHTS else 0.5), 3),
+                "components": {
+                    "schema_match": {"score": round(schema_overlap, 3)},
+                    "rows_match": {"score": round(rows_overlap, 3)}
+                }
+            }
+        }
+
+        normalized_score = {
+            "total_score": round(float(total_score_val), 3) if total_score_val is not None else round((results_match_val * (DEFAULT_WEIGHTS.get("result_equality", 0.7) if DEFAULT_WEIGHTS else 0.5) + (float(qsim_val) if qsim_val is not None else 0.5) * (DEFAULT_WEIGHTS.get("llm_graded_similarity", 0.3) if DEFAULT_WEIGHTS else 0.5)), 3),
+            "is_successful": (True if (isinstance(total_score_val, (int, float)) and total_score_val >= 0.9) else False),
+            "weights": DEFAULT_WEIGHTS if DEFAULT_WEIGHTS else {"results_match": 0.5, "query_similarity": 0.5},
+            "components": components_obj,
+            "query_similarity": float(components_obj["query_similarity"]["score"]),
+            "results_match": float(components_obj["results_match"]["score"])
+        }
+
         results.append({
             "id": it.id,
             "prompt": it.prompt,
             "generated_kql": _normalize_kql_for_display(gen_kql),
             "expected_kql": it.expected_kql,
-            "score": score,
+            "score": normalized_score,
             "metrics": metrics,
             "struct_diff": struct_diff,
             "schema_match": schema_match,
             "rows_match": rows_match,
             "exec_error": _extract_innermost_error_message(exec_out.get("error", "")),
+            "expected_rows_count": len(exp_rows) if isinstance(exp_rows, list) else None,
+            "returned_rows_count": len(exec_out.get("rows") or []),
             "has_results": has_results,
             "gen_statistics": exec_out.get("statistics"),
             "llm_graded_similarity_score": llm_graded_similarity if isinstance(llm_graded_similarity, (int, float)) else None,

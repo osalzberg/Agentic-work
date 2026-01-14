@@ -2237,10 +2237,10 @@
                     </div>
                     
                     <div style="display:flex; gap:10px; margin-top:8px;">
-                        <button id="downloadResultsBtn" class="btn btn-success" onclick="downloadBatchResults()" style="flex:1; min-width:0;">
+                        <button id="downloadResultsBtn" class="btn btn-success" onclick="downloadBatchResults()" style="flex:1; min-width:0; font-size:16px; font-weight:500;">
                             💾 Download Results Excel File
                         </button>
-                        <button id="downloadJsonResultsBtn" class="btn btn-primary" onclick="downloadBatchJsonResults()" style="flex:1; min-width:0;">
+                        <button id="downloadJsonResultsBtn" class="btn btn-primary" onclick="downloadBatchJsonResults()" style="flex:1; min-width:0; font-size:16px; font-weight:500;">
                             💾 Download Results JSON File
                         </button>
                     </div>
@@ -5245,7 +5245,7 @@ async function processQuestionWithRetry(question) {
                         messageEl.style.color = statusColor;
                     }
                 } else if (status === 'success') {
-                    // For success: show query in grey, then execution result and score in green
+                        // For success: show query in grey, then execution result and score in green
                     let resultText = rowCount !== undefined && rowCount !== null ? `Query executed (results: ${rowCount})` : 'Query executed';
                     if (scoreData) {
                         const c = scoreData.components;
@@ -5253,7 +5253,9 @@ async function processQuestionWithRetry(question) {
                         resultText += `<br><span style="font-size: 0.85em;">`;
                         // Only show Results match and Query similarity (llm_score)
                         const resultsMatch = (c.results_match && c.results_match.score !== undefined && c.results_match.score !== null) ? `${(c.results_match.score * 100).toFixed(0)}%` : 'N/A';
-                        const querySimilarity = (scoreData.llm_score !== undefined && scoreData.llm_score !== null) ? `${(scoreData.llm_score * 100).toFixed(0)}%` : 'N/A';
+                        // Prefer normalized property names. Older code used `llm_score` while newer scoring returns `query_similarity`.
+                        const _querySimVal = (scoreData.query_similarity !== undefined && scoreData.query_similarity !== null) ? scoreData.query_similarity : (scoreData.llm_score !== undefined && scoreData.llm_score !== null ? scoreData.llm_score : null);
+                        const querySimilarity = _querySimVal !== null ? `${(_querySimVal * 100).toFixed(0)}%` : 'N/A';
                         resultText += `Results match: ${resultsMatch} | Query similarity: ${querySimilarity}`;
                         resultText += `</span>`;
                     }
@@ -5382,6 +5384,7 @@ async function processQuestionWithRetry(question) {
                         <div style="font-weight: bold; color: #ff9800; margin-bottom: 5px;">Row ${r.row}</div>
                         <div style="color: #666; margin-bottom: 5px; font-size: 0.9rem;">${escapeHtml(r.prompt || 'No prompt')}</div>
                         <div style="color: #666; font-family: monospace; font-size: 0.85rem; margin-top: 5px;">${escapeHtml((r.query || '').substring(0, 200))}${r.query && r.query.length > 200 ? '...' : ''}</div>
+                        <div style="color: #666; font-size: 0.85rem; margin-top: 6px;">${r.returned_rows_count !== undefined && r.returned_rows_count !== null ? `Query executed (results: ${r.returned_rows_count})` : ''}</div>
                         ${scoreHtml}
                     </div>
                     `;
