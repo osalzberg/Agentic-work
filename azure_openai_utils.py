@@ -56,11 +56,30 @@ class AzureOpenAIConfig:
         print(f"[debug:] Chat completions URL: {self.base_url()}/chat/completions?api-version={self.api_version}")
         return f"{self.base_url()}/chat/completions?api-version={self.api_version}"
 
+# Global model override for web interface model selection
+_model_override: str | None = None
+
+def set_model_override(model: str | None) -> None:
+    """Set a global model override for the current request."""
+    global _model_override
+    _model_override = model
+    if model:
+        print(f"[debug:] Model override set to: {model}")
+
+def clear_model_override() -> None:
+    """Clear the global model override."""
+    global _model_override
+    _model_override = None
+
 def load_config() -> AzureOpenAIConfig | None:
     endpoint = os.environ.get("AZURE_OPENAI_ENDPOINT")
     print(f"[debug:] Loaded AZURE_OPENAI_ENDPOINT: {endpoint}")
     api_key = os.environ.get("AZURE_OPENAI_KEY")
-    deployment = os.environ.get("AZURE_OPENAI_DEPLOYMENT", "gpt-35-turbo")
+    deployment = _model_override or os.environ.get("AZURE_OPENAI_DEPLOYMENT", "gpt-35-turbo")
+    if _model_override:
+        print(f"[debug:] Using model override: {deployment}")
+    else:
+        print(f"[debug:] Loaded AZURE_OPENAI_DEPLOYMENT: {deployment}")
     print(f"[debug:] Loaded AZURE_OPENAI_DEPLOYMENT: {deployment}")
     api_version_override = os.environ.get("AZURE_OPENAI_API_VERSION")
     print(f"[debug:] Loaded AZURE_OPENAI_API_VERSION: {api_version_override}")

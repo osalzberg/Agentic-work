@@ -1332,9 +1332,19 @@ def process_query():
         
         data = request.get_json()
         question = data.get('question', '').strip()
+        model = data.get('model')  # Optional model override
+        system_prompt = data.get('system_prompt')  # Optional system prompt override
         
         if not question:
             return jsonify({'success': False, 'error': 'Question is required'})
+        
+        # Set overrides if provided
+        from azure_openai_utils import set_model_override, clear_model_override
+        from prompt_builder import set_system_prompt_override, clear_system_prompt_override
+        if model:
+            set_model_override(model)
+        if system_prompt:
+            set_system_prompt_override(system_prompt)
         
         # Run the async query processing
         loop = asyncio.new_event_loop()
@@ -1359,6 +1369,9 @@ def process_query():
             return jsonify(response_payload)
         finally:
             loop.close()
+            clear_model_override()  # Clean up
+            from prompt_builder import clear_system_prompt_override
+            clear_system_prompt_override()  # Clean up
             
     except Exception as e:
         error_msg = str(e)
@@ -1897,10 +1910,24 @@ def evaluate_query():
         prompt = data.get('prompt', '').strip()
         generated_query = data.get('generated_query', '').strip()
         expected_query = data.get('expected_query', '').strip()
+        model = data.get('model')  # Optional model override
+        system_prompt = data.get('system_prompt')  # Optional system prompt override
+        
+        # Set overrides if provided
+        from azure_openai_utils import set_model_override, clear_model_override
+        from prompt_builder import set_system_prompt_override, clear_system_prompt_override
+        if model:
+            set_model_override(model)
+        if system_prompt:
+            set_system_prompt_override(system_prompt)
+        if model:
+            set_model_override(model)
         
         if not generated_query:
+            clear_model_override()
             return jsonify({'success': False, 'error': 'Generated query is required'}), 400
         if not expected_query:
+            clear_model_override()
             return jsonify({'success': False, 'error': 'Expected query is required'}), 400
         
         # Execute generated query
@@ -1981,11 +2008,20 @@ def evaluate_query():
         })
         
     except Exception as e:
+        from azure_openai_utils import clear_model_override
+        from prompt_builder import clear_system_prompt_override
+        clear_model_override()  # Clean up on error
+        clear_system_prompt_override()  # Clean up on error
         return jsonify({
             'success': False,
             'error': str(e),
             'traceback': traceback.format_exc()
         }), 500
+    finally:
+        from azure_openai_utils import clear_model_override
+        from prompt_builder import clear_system_prompt_override
+        clear_model_override()  # Always clean up
+        clear_system_prompt_override()  # Always clean up
 
 
 @app.route('/api/query-execute', methods=['POST'])
@@ -2262,13 +2298,23 @@ def batch_test_build():
             f.write(output.getvalue())
         print(f"[INFO] Excel report saved to: {excel_report_path}")
         
-        # Return base64 encoded data for download
+        # Return base64 encoded data for download (Excel) and include JSON report data as base64
         encoded_file = base64.b64encode(output.getvalue()).decode('utf-8')
-        
+
+        # Read JSON report bytes and encode (safely)
+        try:
+            with open(json_report_path, 'rb') as jf:
+                json_bytes = jf.read()
+            encoded_json = base64.b64encode(json_bytes).decode('utf-8')
+        except Exception:
+            encoded_json = None
+
         return jsonify({
             'success': True,
             'file_data': encoded_file,
-            'filename': f"results_{secure_filename(filename)}",
+            'filename': excel_filename,
+            'json_file_data': encoded_json,
+            'json_filename': json_filename,
             'json_report_path': json_report_path,
             'excel_report_path': excel_report_path,
             'model_info': {
@@ -2373,17 +2419,13 @@ def batch_test_upload():
         results = []
         for idx, row in df.iterrows():
             prompt = row['Prompt']
-            
             # Skip empty prompts silently (no logging, no display)
             if pd.isna(prompt) or not str(prompt).strip():
                 continue
-            
             prompt_str = str(prompt).strip()
-            
             try:
                 # Translate natural language to KQL
                 result = asyncio.run(agent.process_natural_language(prompt_str))
-                
                 # Parse the result - it returns a formatted string, not a dict
                 if isinstance(result, str):
                     # Check if result contains an error
@@ -2395,7 +2437,8 @@ def batch_test_upload():
                             'row': idx + 1,
                             'prompt': prompt_str[:100],
                             'status': 'error',
-                            'reason': error_msg
+                            'reason': error_msg,
+                            'score': None
                         })
                     else:
                         # Extract KQL from the result (it's formatted with headers)
@@ -2409,14 +2452,14 @@ def batch_test_upload():
                             parts = result.split('📝 Generated KQL Query')
                             if len(parts) > 1:
                                 kql_query = parts[1].strip()
-                        
                         df.at[idx, 'Generated Query'] = kql_query
                         df.at[idx, 'Reason'] = 'Successfully generated'
                         results.append({
                             'row': idx + 1,
                             'prompt': prompt_str[:100],
                             'status': 'success',
-                            'query_length': len(kql_query)
+                            'query_length': len(kql_query),
+                            'score': None  # Score calculation not available in this endpoint
                         })
                 else:
                     df.at[idx, 'Generated Query'] = ''
@@ -2425,9 +2468,9 @@ def batch_test_upload():
                         'row': idx + 1,
                         'prompt': prompt_str[:100],
                         'status': 'error',
-                        'reason': 'Unexpected result format'
+                        'reason': 'Unexpected result format',
+                        'score': None
                     })
-                    
             except Exception as e:
                 df.at[idx, 'Generated Query'] = ''
                 df.at[idx, 'Reason'] = f'Exception: {str(e)}'
@@ -2435,7 +2478,8 @@ def batch_test_upload():
                     'row': idx + 1,
                     'prompt': prompt_str[:100],
                     'status': 'error',
-                    'reason': str(e)
+                    'reason': str(e),
+                    'score': None
                 })
         
         # Save to BytesIO

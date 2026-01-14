@@ -144,22 +144,26 @@ async def process_file(
     success_count = 0
     error_count = 0
     
+    stop_on_critical_error = False
+    critical_error_types = [
+        'authentication', 'authorization', 'auth', '401', '403', 'permission', 'forbidden', 'server error', 'service unavailable', 'timeout', 'connection refused', 'invalid api key', 'not authorized', 'not authenticated', 'access denied', 'token expired', 'rate limit', '429', '500', '502', '503', '504'
+    ]
     for row_num, (idx, row) in enumerate(df.iterrows()):
+        if stop_on_critical_error:
+            print(f"⏹️  Stopping batch due to critical error on previous row.")
+            df.at[idx, reason_column] = "Skipped due to earlier critical error"
+            continue
         prompt = row[prompt_column]
-        
         # Skip empty prompts
         if pd.isna(prompt) or not str(prompt).strip():
             print(f"⏭️  Row {row_num + 1}: Skipping empty prompt")
             df.at[idx, reason_column] = "Empty prompt"
             continue
-        
         prompt_str = str(prompt).strip()
         print(f"\n🔄 Row {row_num + 1}/{len(df)}: {prompt_str[:80]}{'...' if len(prompt_str) > 80 else ''}")
-        
         try:
             # Translate natural language to KQL
             result = await agent.process_natural_language(prompt_str)
-            
             # Handle different result formats
             if isinstance(result, dict) and result.get("type") == "query_success":
                 kql_query = result.get("kql_query", "")
@@ -174,23 +178,32 @@ async def process_file(
                 df.at[idx, reason_column] = f"Error: {error}"
                 error_count += 1
                 print(f"❌ Failed: {error}")
+                # Check for critical error on first row
+                if row_num == 0 and any(word in str(error).lower() for word in critical_error_types):
+                    print(f"🛑 Critical error detected on first prompt: {error}\nStopping further processing.")
+                    stop_on_critical_error = True
             elif isinstance(result, str):
                 # String result (error or other message)
                 df.at[idx, output_column] = ""
                 df.at[idx, reason_column] = f"Error: {result}"
                 error_count += 1
                 print(f"❌ Failed: {result}")
+                if row_num == 0 and any(word in result.lower() for word in critical_error_types):
+                    print(f"🛑 Critical error detected on first prompt: {result}\nStopping further processing.")
+                    stop_on_critical_error = True
             else:
                 df.at[idx, output_column] = ""
                 df.at[idx, reason_column] = "Unknown result format"
                 error_count += 1
                 print(f"❌ Unknown result format")
-                
         except Exception as e:
             df.at[idx, output_column] = ""
             df.at[idx, reason_column] = f"Exception: {str(e)}"
             error_count += 1
             print(f"❌ Exception: {e}")
+            if row_num == 0 and any(word in str(e).lower() for word in critical_error_types):
+                print(f"🛑 Critical exception detected on first prompt: {e}\nStopping further processing.")
+                stop_on_critical_error = True
     
     # Save results
     print(f"\n💾 Saving results to: {output_file}")

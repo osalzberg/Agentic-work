@@ -305,7 +305,7 @@ class KQLAgent:
         Returns None if query has time filters, otherwise returns default timespan_hours
         """
         if not kql_query:
-            return 1
+                return 24
         
         # Convert to lowercase for case-insensitive matching
         query_lower = kql_query.lower()
@@ -333,8 +333,8 @@ class KQLAgent:
             print("🕐 Query contains time filters - using query's own time range")
             return None  # Let the query define its own time range
         else:
-            print("🕐 No time filters detected - applying default 1 hour timespan")
-            return 1  # Default to 1 hour for queries without time filters
+                print("🕐 No time filters detected - applying default 24 hour timespan")
+                return 24  # Default to 24 hours for queries without time filters
     
     async def process_natural_language(self, question: str) -> str:
         """Process natural language question and return results"""
