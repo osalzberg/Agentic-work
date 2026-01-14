@@ -543,7 +543,11 @@ def main() -> None:
             exp_rows = exp_exec_out.get("rows") or []
         
         schema_match = compare_schema(exp_cols, exec_out["columns"], strict_order=False)
-        rows_match = compare_rows(exp_rows, exec_out["rows"], strict_order=strict_rows, tolerances=it.tolerances)
+        # Set column headers for row comparison (used by fuzzy alignment)
+        import query_evaluations.comparator as comparator
+        comparator.compare_rows.expected_cols = exp_cols
+        comparator.compare_rows.actual_cols = exec_out["columns"]
+        rows_match = comparator.compare_rows(exp_rows, exec_out["rows"], strict_order=strict_rows, tolerances=it.tolerances)
 
         # Must-pass gates
         gates_ok = True
@@ -566,34 +570,23 @@ def main() -> None:
             """Determine if a field is critical based on prompt and query context."""
             field_lower = field_name.lower()
             prompt_lower = prompt.lower()
-            query_lower = expected_query.lower()
-            
-            # Check if field is explicitly mentioned in project clause (these are explicitly requested)
-            project_match = _re.search(r'\|\s*project\s+([^|]+)', expected_query, flags=_re.IGNORECASE)
-            if project_match:
-                project_clause = project_match.group(1).lower()
-                # Check if this specific field appears in the project
-                project_fields = [f.strip().split('=')[0].strip() for f in project_clause.split(',')]
-                if any(field_lower == pf.lower() or field_lower in pf.lower() for pf in project_fields):
-                    return True
-            
+            # Only use prompt for all logic below
             # Check if field is mentioned in the prompt (by name or close match)
-            # Remove common suffixes for matching
             field_base = field_lower.replace('name', '').replace('id', '').replace('uid', '')
             if field_lower in prompt_lower or field_base in prompt_lower:
                 return True
-            
+
             # Check if this is an aggregation or simple list query
             aggregation_keywords = ['aggregate', 'summarize', 'count', 'sum', 'average', 'total', 'max', 'min', 'most', 'least', 'highest', 'lowest']
-            is_aggregation = any(keyword in prompt_lower for keyword in aggregation_keywords) or 'summarize' in query_lower
-            
+            is_aggregation = any(keyword in prompt_lower for keyword in aggregation_keywords)
+
             simple_list_keywords = ['list', 'show all', 'display all', 'get all', 'find all']
             is_simple_list = any(keyword in prompt_lower for keyword in simple_list_keywords) and not any(keyword in prompt_lower for keyword in ['time', 'when', 'date', 'recent', 'old', 'new', 'first', 'last', 'order', 'sort'])
-            
+
             # If prompt asks for a "list" or "show" items, identifier fields are critical
             list_indicators = ['list', 'show', 'find', 'get', 'display', 'identify', 'which']
             asks_for_list = any(indicator in prompt_lower for indicator in list_indicators)
-            
+
             if asks_for_list:
                 # Identifier patterns - these are critical when listing items
                 identifier_patterns = ['id', 'uid', 'name']
@@ -609,16 +602,14 @@ def main() -> None:
                             # Or if it's just the identifier pattern itself (like "Name", "ID")
                             if field_lower in identifier_patterns:
                                 return True
-            
+
             # TimeGenerated and timestamp fields are generally critical
             # EXCEPT when it's an aggregation or simple list without time context
             if 'timegenerated' in field_lower or 'timestamp' in field_lower:
-                # Not critical if it's an aggregation or simple list
                 if is_aggregation or is_simple_list:
                     return False
-                # Otherwise, timestamp is critical
                 return True
-            
+
             return False
 
         def _extract_group_by_cols(kql_text: str) -> set[str]:

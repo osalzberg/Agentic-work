@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Natural Language KQL Agent</title>
+    <title>NL2KQL Benchmark</title>
     <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cdefs%3E%3ClinearGradient id='grad' x1='0%25' y1='0%25' x2='100%25' y2='100%25'%3E%3Cstop offset='0%25' style='stop-color:%23667eea;stop-opacity:1' /%3E%3Cstop offset='100%25' style='stop-color:%23764ba2;stop-opacity:1' /%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='100' height='100' rx='15' fill='url(%23grad)'/%3E%3Ctext x='50' y='35' font-family='Arial,sans-serif' font-size='24' font-weight='bold' text-anchor='middle' fill='white'%3EKQL%3C/text%3E%3Ctext x='50' y='65' font-family='Arial,sans-serif' font-size='36' text-anchor='middle' fill='white'%3E🤖%3C/text%3E%3C/svg%3E">
     <link rel="shortcut icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cdefs%3E%3ClinearGradient id='grad' x1='0%25' y1='0%25' x2='100%25' y2='100%25'%3E%3Cstop offset='0%25' style='stop-color:%23667eea;stop-opacity:1' /%3E%3Cstop offset='100%25' style='stop-color:%23764ba2;stop-opacity:1' /%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='100' height='100' rx='15' fill='url(%23grad)'/%3E%3Ctext x='50' y='35' font-family='Arial,sans-serif' font-size='24' font-weight='bold' text-anchor='middle' fill='white'%3EKQL%3C/text%3E%3Ctext x='50' y='65' font-family='Arial,sans-serif' font-size='36' text-anchor='middle' fill='white'%3E🤖%3C/text%3E%3C/svg%3E">
     <style>
@@ -14,7 +14,7 @@
         }
 
         body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            font-family: 'Segoe UI', sans-serif;
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             min-height: 100vh;
             padding: 20px;
@@ -124,12 +124,9 @@
         }
 
         .btn-success {
-            background: #28a745;
-            color: white;
         }
 
         .btn-success:hover {
-            background: #218838;
             transform: translateY(-2px);
         }
 
@@ -401,7 +398,7 @@
             box-shadow: 0 4px 16px rgba(0, 0, 0, 0.05);
             border: 1px solid #e9ecef;
             white-space: pre-wrap;
-            font-family: 'Courier New', monospace;
+            font-family: 'Segoe UI', sans-serif;
             font-size: 0.9rem;
             line-height: 1.6;
             max-height: 400px;
@@ -558,7 +555,7 @@
             overflow: hidden;
             box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
             border: 1px solid #e9ecef;
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            font-family: 'Segoe UI', sans-serif;
         }
 
         .result-table th {
@@ -637,7 +634,7 @@
             border-radius: 12px;
             padding: 20px;
             margin: 20px 0;
-            font-family: 'SF Mono', 'Monaco', 'Inconsolata', 'Roboto Mono', 'Courier New', monospace;
+            font-family: 'Segoe UI', sans-serif;
             font-size: 0.9rem;
             color: #e2e8f0;
             white-space: pre-wrap;
@@ -792,7 +789,7 @@
 
         .cell-number {
             text-align: right;
-            font-family: 'SF Mono', 'Monaco', 'Roboto Mono', 'Courier New', monospace;
+            font-family: 'Segoe UI', sans-serif;
             font-weight: 500;
             color: #2563eb;
             background: linear-gradient(135deg, #f0f7ff 0%, #ffffff 100%);
@@ -1003,7 +1000,7 @@
         .workspace-discovery-results {
             max-width: 100%;
             overflow-x: auto;
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            font-family: 'Segoe UI', sans-serif;
         }
         
         .workspace-summary {
@@ -1560,7 +1557,7 @@
         max-height: var(--schema-max-height); /* responsive capped height */
         overflow-y: auto; /* enable vertical scroll */
         overflow-x: hidden; /* hide horizontal overflow */
-        font-family: 'Segoe UI', Tahoma, sans-serif; 
+        font-family: 'Segoe UI', sans-serif; 
         display: none;
         box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
         backdrop-filter: blur(10px);
@@ -1806,16 +1803,112 @@
     @keyframes ws-spin{to{transform:rotate(360deg);}}
     </style>
 </head>
-<body>
-    <div class="container">
-        <div class="header">
-            <h1>🤖 Natural Language KQL Agent</h1>
-            <p>Ask questions about your Azure Log Analytics data in plain English</p>
-        </div>
-
-        <div class="main-content">
+<head>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body style="background: hsl(var(--background)); min-height: 100vh; font-family: 'Inter', 'Segoe UI', Arial, sans-serif; color: hsl(var(--foreground));">
+    <style>
+        :root {
+            --background: 230 25% 96%;
+            --foreground: 230 25% 10%;
+            --card: 0 0% 100%;
+            --card-foreground: 230 25% 10%;
+            --primary: 252 85% 60%;
+            --primary-foreground: 0 0% 100%;
+            --secondary: 230 40% 96%;
+            --secondary-foreground: 230 25% 20%;
+            --muted: 230 20% 94%;
+            --muted-foreground: 230 15% 45%;
+            --accent: 252 75% 55%;
+            --accent-foreground: 0 0% 100%;
+            --success: 175 65% 42%;
+            --success-foreground: 0 0% 100%;
+            --warning: 340 45% 58%;
+            --warning-foreground: 0 0% 100%;
+            --destructive: 0 65% 55%;
+            --destructive-foreground: 0 0% 100%;
+            --border: 230 20% 88%;
+            --input: 230 20% 92%;
+            --ring: 252 85% 60%;
+            --radius: 0.75rem;
+            --gradient-primary: linear-gradient(135deg, hsl(185 70% 42%) 0%, hsl(195 65% 38%) 50%, hsl(210 55% 35%) 100%);
+            --gradient-header: linear-gradient(135deg, hsl(185 65% 40%) 0%, hsl(200 60% 35%) 100%);
+            --gradient-button: linear-gradient(135deg, hsl(175 60% 40%) 0%, hsl(185 55% 35%) 100%);
+            --shadow-card: 0 25px 50px -12px hsl(185 40% 25% / 0.18);
+            --shadow-input: 0 2px 8px hsl(200 30% 50% / 0.08);
+            --shadow-button: 0 4px 14px hsl(175 55% 35% / 0.35);
+        }
+        body { background: hsl(var(--background)); color: hsl(var(--foreground)); font-family: 'Inter', 'Segoe UI', Arial, sans-serif; }
+        .gradient-bg { background: var(--gradient-header); }
+        .glass-card {
+            background: hsl(var(--card));
+            color: hsl(var(--card-foreground));
+            border-radius: 1.75rem;
+            box-shadow: var(--shadow-card);
+            border: 1.5px solid hsl(var(--border));
+        }
+        .input-field {
+            background: hsl(var(--input));
+            border: 1.5px solid hsl(var(--border));
+            border-radius: 0.75rem;
+            padding: 13px 16px;
+            font-size: 1.08rem;
+            color: hsl(var(--foreground));
+            box-shadow: var(--shadow-input);
+        }
+        .btn-success {
+            background: var(--gradient-button);
+            color: #fff;
+            font-weight: 700;
+            border: none;
+            border-radius: 0.75rem;
+            padding: 15px 0;
+            font-size: 1.18rem;
+            box-shadow: var(--shadow-button);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+            transition: transform 0.15s, box-shadow 0.15s;
+        }
+        .btn-success:active { transform: scale(0.98); }
+        .btn-file {
+            background: hsl(var(--warning));
+            color: hsl(var(--warning-foreground));
+            font-weight: 600;
+            border: none;
+            border-radius: 0.75rem;
+            padding: 13px 28px;
+            font-size: 1.08rem;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            box-shadow: var(--shadow-input);
+        }
+        .btn-file:hover {
+            transform: translateY(-2px);
+        }
+        .btn-file:active { transform: scale(0.98); }
+        .file-format-box {
+            background: hsl(var(--muted));
+            border-radius: 0.88rem;
+            padding: 15px 18px 13px 18px;
+            margin-bottom: 22px;
+            border: 1.5px solid hsl(var(--border));
+        }
+        .file-format-box h4 { color: hsl(var(--primary)); font-size: 1.04rem; font-weight: 600; margin-bottom: 7px; }
+        .file-format-box ul { color: #626784; }
+        .file-format-box li strong { color: hsl(var(--foreground)); }
+        /* .file-format-box li span { color: hsl(var(--primary)); font-weight: 600; } */
+    </style>
+    <div class="gradient-bg" style="padding: 48px 0 64px 0; text-align: center;">
+        <h1 style="color: #fff; font-size: 2.8rem; font-weight: 300; margin-bottom: 10px; letter-spacing: 0.1px; font-family: sans-serif;">NL2KQL Benchmark</h1>
+        <div style="color: hsl(0 0% 100% / 0.85); font-size: 1.18rem; font-family: sans-serif; font-weight: 300; letter-spacing: 0.1px;">Measure natural language to KQL translation accuracy</div>
+    </div>
+    <div class="container glass-card" style="max-width: 900px; margin: -30px auto 0 auto; padding: 38px 36px 32px 36px;">
+        <div class="main-content" style="padding: 0;">
             <!-- Setup Section -->
-            <div class="setup-section">
+            <div class="setup-section" style="display: none;">
                 <h2>🔧 Workspace Setup</h2>                <div class="input-group">
                     <input type="text" id="workspaceId" placeholder="Enter your Log Analytics Workspace ID" value="81a662b5-8541-481b-977d-5d956616ac5e">
                     <button id="setWorkspaceBtn" class="btn btn-primary workspace-btn" aria-live="polite" aria-label="Set workspace">
@@ -1827,7 +1920,7 @@
                     </button>
                 </div>
                 <div id="setupStatus" style="display:none"></div>
-                <div class="schema-controls">
+                <div class="schema-controls" style="display: none;">
                     <button class="schema-primary-btn" id="showSchemaBtn" onclick="toggleSchema()" aria-expanded="false" aria-controls="schemaTreeContainer">
                         <span class="icon" aria-hidden="true"></span>
                         <span>Schema</span>
@@ -1840,10 +1933,140 @@
                     </div>
                     <ul id="schemaTree" class="schema-tree"></ul>
                 </div>
+                <!-- Scoring System Button -->
+                <div style="margin-top: 18px; text-align: right;">
+                    <button id="showScoringBtn" class="btn btn-secondary" style="font-size: 1rem; padding: 10px 22px;" onclick="openScoringModal()">
+                        📖 How scoring works
+                    </button>
+                </div>
             </div>
+    <!-- Scoring System Modal -->
+    <div id="scoringModal" style="display:none; position:fixed; z-index:9999; left:0; top:0; width:100vw; height:100vh; background:rgba(40,40,60,0.45);">
+        <div style="background:#fff; max-width:700px; margin:60px auto; border-radius:18px; box-shadow:0 8px 40px rgba(0,0,0,0.18); padding:0 0 24px 0; position:relative;">
+            <div style="padding:24px 32px 0 32px; border-radius:18px 18px 0 0; background:linear-gradient(135deg,#667eea 0%,#764ba2 100%); color:#fff;">
+                <h2 style="margin:0; font-size:1.6rem; font-weight:500;">How Scoring Works</h2>
+            </div>
+            <div id="scoringModalContent" style="padding:28px 32px; max-height:60vh; overflow-y:auto; font-size:0.9rem; font-family: sans-serif; line-height:1.7; color:#222; background:#fff;">
+                        <style id="scoring-md-style">
+                            /* Custom markdown styling for scoring modal */
+                            /* Ensure the main markdown wrapper uses the requested font and size */
+                            #scoringModalContent .scoring-md {
+                                font-size: 0.9rem;
+                                font-family: sans-serif;
+                                color: #222;
+                            }
+                            /* Hide any H1 that may remain, and prefer H2 as section headers */
+                            #scoringModalContent .scoring-md h1 {
+                                display: none !important;
+                                margin: 0;
+                                padding: 0;
+                                height: 0;
+                                overflow: hidden;
+                            }
+                            #scoringModalContent .scoring-md h2 {
+                                font-size: 1.1rem;
+                                margin-top: 1.1em;
+                                margin-bottom: 0.5em;
+                                font-weight: 600;
+                            }
+                            #scoringModalContent .scoring-md h3 {
+                                font-size: 1rem;
+                                margin-top: 1em;
+                                margin-bottom: 0.4em;
+                                font-weight: 500;
+                            }
+                            #scoringModalContent .scoring-md p {
+                                font-size: 0.9rem;
+                                margin: 0.5em 0 1.1em 0;
+                            }
+                            #scoringModalContent .scoring-md ul, #scoringModalContent .scoring-md ol {
+                                margin-left: 2em;
+                                margin-bottom: 1em;
+                                font-size: 0.9rem;
+                                padding-left: 2em;
+                            }
+                            #scoringModalContent .scoring-md li {
+                                margin-bottom: 0.4em;
+                                line-height: 1.7;
+                                font-size: 0.9rem;
+                            }
+                            #scoringModalContent .scoring-md code, #scoringModalContent .scoring-md pre {
+                                background: #f4f4f4;
+                                color: #2d2d2d;
+                                border-radius: 4px;
+                                font-size: 1.01rem;
+                                padding: 2px 6px;
+                            }
+                            #scoringModalContent .scoring-md pre {
+                                padding: 10px 14px;
+                                overflow-x: auto;
+                                margin-bottom: 1.2em;
+                            }
+                            #scoringModalContent .scoring-md blockquote {
+                                border-left: 4px solid #667eea;
+                                background: #f7f8fa;
+                                margin: 1em 0;
+                                padding: 0.7em 1.2em;
+                                color: #444;
+                                font-size: 0.9rem;
+                            }
+                            #scoringModalContent .scoring-md table {
+                                border-collapse: collapse;
+                                width: 100%;
+                                margin-bottom: 1.2em;
+                            }
+                            #scoringModalContent .scoring-md th, #scoringModalContent .scoring-md td {
+                                border: 1px solid #e0e0e0;
+                                padding: 8px 12px;
+                                text-align: left;
+                            }
+                            #scoringModalContent .scoring-md th {
+                                background: #f0f2fa;
+                                font-weight: 600;
+                            }
+                        </style>
+                <div class="loading">Loading scoring system...</div>
+            </div>
+            <button onclick="closeScoringModal()" style="position:absolute; top:18px; right:24px; background:none; border:none; font-size:1.7rem; color:#fff; cursor:pointer;">&times;</button>
+        </div>
+    </div>
+    <!-- Marked.js for Markdown rendering -->
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script>
+    function openScoringModal() {
+        const modal = document.getElementById('scoringModal');
+        const content = document.getElementById('scoringModalContent');
+        modal.style.display = 'block';
+        content.innerHTML = '<div class="loading">Loading scoring system...</div>';
+        // Ensure the CSS is loaded before rendering
+        const scoringMdStyle = document.getElementById('scoring-md-style');
+        if (scoringMdStyle && scoringMdStyle.parentNode !== document.head) {
+            document.head.appendChild(scoringMdStyle);
+        }
+        fetch('/static/SCORING_SYSTEM.md')
+            .then(r => r.ok ? r.text() : Promise.reject('Failed to load scoring doc'))
+            .then(md => {
+                // Remove a leading H1 (e.g. '# Query Scoring System') so it never appears
+                md = md.replace(/^\s*#\s.*(?:\r?\n)+/, '');
+                // Always wrap in scoring-md div for CSS targeting
+                content.innerHTML = `<div class="scoring-md">${marked.parse(md)}</div>`;
+            })
+            .catch(() => {
+                content.innerHTML = '<div class="error">Could not load scoring documentation.</div>';
+            });
+    }
+    function closeScoringModal() {
+        document.getElementById('scoringModal').style.display = 'none';
+    }
+    // Close modal on background click
+    window.addEventListener('click', function(e) {
+        const modal = document.getElementById('scoringModal');
+        if (e.target === modal) closeScoringModal();
+    });
+    </script>
 
             <!-- Query Section -->
-            <div class="query-section">
+            <div class="query-section" style="display: none;">
                 <h2>💬 Ask Your Question</h2>
                 <div class="question-container">
                     <textarea 
@@ -1881,18 +2104,30 @@
               
             <!-- Batch Testing Section -->
             <div class="query-section" style="margin-top: 30px; border-top: 3px solid #e9ecef; padding-top: 30px;">
-                <h2>📊 Benchmark query generation and result summarization</h2>
-                <p style="color: #666; margin-bottom: 15px;">Upload an Excel/CSV file with prompts and expected KQL queries to get benchmark results</p>
-                
-                <div style="background: #f8f9fa; border-radius: 12px; padding: 20px; margin-bottom: 20px;">
-                    <h4 style="margin-bottom: 10px; color: #333;">📋 File Format:</h4>
-                    <ul style="margin-left: 20px; color: #666; line-height: 1.8;">
-                        <li><strong>Column 1 - Prompt:</strong> Your natural language questions</li>
-                        <li><strong>Column 2 - Expected Query:</strong> KQL reference to compare to</li>
-                    </ul>
+                <!-- Workspace Setup -->
+
+                <div style="margin-bottom: 18px;">
+                    <label for="workspaceId" style="font-weight: 500; color: hsl(var(--foreground)); font-size: 1rem; font-family: sans-serif; margin-bottom: 6px; display: block;">Workspace ID</label>
+                    <input type="text" id="workspaceId" placeholder="Enter your Log Analytics Workspace ID" value="81a662b5-8541-481b-977d-5d956616ac5e" class="input-field" style="width: 100%; margin-bottom: 0; font-weight: 400; font-size: 0.9rem; font-family: sans-serif;">
+                </div>
+                <div style="margin-bottom: 18px;">
+                    <label for="modelSelect" style="font-weight: 500; color: hsl(var(--foreground)); font-size: 1rem; font-family: sans-serif; margin-bottom: 6px; display: block;">Model</label>
+                    <select id="modelSelect" class="input-field" style="width: 200px; font-weight: 400; font-size: 0.9rem; font-family: sans-serif;">
+                        <option value="gpt-5.2-chat" selected>gpt-5.2-chat</option>
+                        <option value="gpt-4o-mini">gpt-4o-mini</option>
+                    </select>
+                </div>
+                <div style="margin-bottom: 18px;">
+                    <label for="systemPrompt" style="font-weight: 500; color: hsl(var(--foreground)); font-size: 1rem; font-family: sans-serif; margin-bottom: 6px; display: block;">System Prompt</label>
+                    <textarea 
+                        id="systemPrompt" 
+                        class="input-field"
+                        style="width: 100%; min-height: 90px; font-weight: 400; font-size: 14px; font-family: sans-serif; line-height: 20px; letter-spacing: 0;"
+                        placeholder="Enter system prompt...">Translate the user prompt to KQL (Kusto Query Language) to run on an Azure Log Analytics workspace. Return ONLY the KQL query code with no explanations, comments, or additional text.</textarea>
                 </div>
 
-                <div class="input-group" style="margin-bottom: 15px;">
+
+                <div style="display: flex; align-items: center; gap: 16px; margin-bottom: 18px;">
                     <input 
                         type="file" 
                         id="batchFileInput" 
@@ -1900,20 +2135,37 @@
                         style="display: none;"
                         onchange="handleBatchFileSelect(event)"
                     />
-                    <button class="btn btn-primary" onclick="document.getElementById('batchFileInput').click()" style="width: 200px;">
-                        📁 Choose File (Excel/CSV)
+                    <button class="btn-file" onclick="document.getElementById('batchFileInput').click()" style="width: 200px; font-weight: 500; font-size: 16px;">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="min-width:18px; min-height:18px;" class="lucide lucide-folder-open"><path d="m6 14 1.5-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.54 6a2 2 0 0 1-1.95 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H18a2 2 0 0 1 2 2v2"></path></svg>
+                        Select input file
                     </button>
-                    <span id="selectedFileName" style="color: #666; font-style: italic;">No file selected</span>
+                    <span id="selectedFileName" style="color: hsl(var(--muted-foreground)); font-style: italic; font-size: 14px; font-family: sans-serif;">No file selected (xls, csv)</span>
                 </div>
 
-                <button 
-                    id="processBatchBtn" 
-                    class="btn btn-success" 
-                    onclick="processBatchFile()" 
-                    disabled 
-                    style="width: 100%; opacity: 0.6; cursor: not-allowed;">
-                    🚀 Process Batch Test
-                </button>
+
+                <div class="file-format-box">
+                    <h4 style="color: #626784; font-weight: 400; font-size: 14px; font-family: sans-serif;">File Format:</h4>
+                    <ul style="list-style: none; padding-left: 0;">
+                        <li style="color: #626784; font-weight: 400; font-size: 14px; font-family: sans-serif; line-height: 20px;">
+                            <span style="font-weight: 600;">* Column 1 - Prompt</span>: <span> Your natural language questions</span>
+                        </li>
+                        <li style="color: #626784; font-weight: 400; font-size: 14px; font-family: sans-serif; line-height: 20px;">
+                            <span style="font-weight: 600;">* Column 2 - Expected Query</span>: <span> KQL reference to compare to</span>
+                        </li>
+                    </ul>
+                </div>
+
+
+                <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 18px;">
+                    <button id="processBatchBtn" class="btn-success flex items-center gap-2" onclick="processBatchFile()" disabled style="width: 250px; opacity: 0.6; font-size: 16px;">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-rocket w-5 h-5"><path d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91-.09z"></path><path d="m12 15-3-3a22 22 0 0 1 2-3.95A12.88 12.88 0 0 1 22 2c0 2.72-.78 7.5-6 11a22.35 22.35 0 0 1-4 2z"></path><path d="M9 12H4s.55-3.03 2-4c1.62-1.08 5 0 5 0"></path><path d="M12 15v5s3.03-.55 4-2c1.08-1.62 0-5 0-5"></path></svg>
+                        Run Benchmark
+                    </button>
+                    <a id="showScoringBtn" href="#" onclick="openScoringModal(); return false;" style="font-size: 16px; font-family: sans-serif; color: hsl(var(--primary)); text-decoration: none; font-weight: 500; margin-left: 18px; display: flex; align-items: center; gap: 5px;">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-circle-help w-4 h-4"><circle cx="12" cy="12" r="10"></circle><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path><path d="M12 17h.01"></path></svg>
+                        How scoring works
+                    </a>
+                </div>
 
                 <!-- Batch Progress Section -->
                 <div id="batchProgressSection" style="display: none; margin-top: 20px; background: #f8f9fa; border-radius: 12px; padding: 20px;">
@@ -1984,16 +2236,15 @@
                         </div>
                     </div>
                     
-                    <button id="downloadResultsBtn" class="btn btn-success" onclick="downloadBatchResults()" style="width: 100%;">
-                        💾 Download Results Excel File
-                    </button>
+                    <div style="display:flex; gap:10px; margin-top:8px;">
+                        <button id="downloadResultsBtn" class="btn btn-success" onclick="downloadBatchResults()" style="flex:1; min-width:0;">
+                            💾 Download Results Excel File
+                        </button>
+                        <button id="downloadJsonResultsBtn" class="btn btn-primary" onclick="downloadBatchJsonResults()" style="flex:1; min-width:0;">
+                            💾 Download Results JSON File
+                        </button>
+                    </div>
                 </div>
-            </div>
-              
-            <!-- KQL Query Section -->
-            <div class="kql-query-section">
-                <h3>📝 Generated KQL Query</h3>
-                <div class="kql-query" id="kqlQuery"></div>
             </div>
 
             <!-- Results Section -->
@@ -4511,6 +4762,7 @@ async function processQuestionWithRetry(question) {
         let batchFileName = '';
         let batchResultsData = null;
 
+
         function escapeHtml(text) {
             const div = document.createElement('div');
             div.textContent = text;
@@ -4541,9 +4793,35 @@ async function processQuestionWithRetry(question) {
                 return;
             }
 
+            // Setup workspace if not connected
             if (!isConnected) {
-                showError('Please setup workspace first');
-                return;
+                const workspaceId = document.getElementById('workspaceId').value.trim();
+                if (!workspaceId) {
+                    showError('Please enter a workspace ID');
+                    return;
+                }
+                
+                // Call setup and wait for it to complete
+                try {
+                    const response = await fetch('/api/setup', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ workspace_id: workspaceId })
+                    });
+                    
+                    const data = await response.json();
+                    if (!data.success) {
+                        showError('Workspace setup failed: ' + data.error);
+                        return;
+                    }
+                    
+                    // Mark as connected
+                    isConnected = true;
+                    updateUIElementsState();
+                } catch (error) {
+                    showError('Failed to setup workspace: ' + error.message);
+                    return;
+                }
             }
 
             // Show progress
@@ -4641,13 +4919,19 @@ async function processQuestionWithRetry(question) {
                             
                             if (testCase.expected_query && testCase.expected_query.trim()) {
                                 try {
+                                    // Get selected model and system prompt
+                                    const model = document.getElementById('modelSelect').value;
+                                    const systemPrompt = document.getElementById('systemPrompt').value;
+                                    
                                     const evalResponse = await fetch('/api/evaluate-query', {
                                         method: 'POST',
                                         headers: { 'Content-Type': 'application/json' },
                                         body: JSON.stringify({
                                             prompt: prompt,
                                             generated_query: kqlQuery,
-                                            expected_query: testCase.expected_query
+                                            expected_query: testCase.expected_query,
+                                            model: model,
+                                            system_prompt: systemPrompt
                                         })
                                     });
                                     
@@ -4732,7 +5016,8 @@ async function processQuestionWithRetry(question) {
                                     output: '',
                                     execution_success: false,
                                     expected_rows_count: null,
-                                    returned_rows_count: null
+                                    returned_rows_count: null,
+                                    score: null
                                 });
                                 continue; // Skip to next query
                             }
@@ -4749,7 +5034,7 @@ async function processQuestionWithRetry(question) {
                                 execution_success: !executionFailed,
                                 expected_rows_count: expectedRowsCount,
                                 returned_rows_count: returnedRowsCount,
-                                score: scoreData
+                                score: scoreData || null
                             });
                         } else {
                             // Check if a query was generated despite execution error
@@ -4801,7 +5086,8 @@ async function processQuestionWithRetry(question) {
                                 output: '',
                                 execution_success: false,
                                 expected_rows_count: null,
-                                returned_rows_count: null
+                                returned_rows_count: null,
+                                score: null
                             });
                         }
                     } catch (error) {
@@ -4816,7 +5102,8 @@ async function processQuestionWithRetry(question) {
                             output: '',
                             execution_success: false,
                             expected_rows_count: null,
-                            returned_rows_count: null
+                            returned_rows_count: null,
+                            score: null
                         });
                     }
                 }
@@ -4836,13 +5123,15 @@ async function processQuestionWithRetry(question) {
 
                 const buildData = await buildResponse.json();
 
-                if (buildData.success) {
+                    if (buildData.success) {
                     updateBatchProgress(100, 'Complete!');
                     
                     // Store results for download
                     batchResultsData = {
                         fileData: buildData.file_data,
-                        filename: buildData.filename
+                        filename: buildData.filename,
+                        jsonFileData: buildData.json_file_data,
+                        jsonFilename: buildData.json_filename
                     };
 
                     // Calculate summary
@@ -4859,7 +5148,7 @@ async function processQuestionWithRetry(question) {
 
                     // Show summary
                     displayBatchSummary(summary, results);
-                    
+                    // Batch report links removed: no DOM report link elements will be created or modified.
                     setTimeout(() => {
                         document.getElementById('batchProgressSection').style.display = 'none';
                         document.getElementById('batchResultsSection').style.display = 'block';
@@ -4962,11 +5251,10 @@ async function processQuestionWithRetry(question) {
                         const c = scoreData.components;
                         resultText += `<br><strong>Score: ${(scoreData.total_score * 100).toFixed(1)}%</strong> (${scoreData.is_successful ? 'PASS ≥90%' : 'FAIL <90%'})`;
                         resultText += `<br><span style="font-size: 0.85em;">`;
-                        resultText += `Exec: ${(c.exec_success.score * 100).toFixed(0)}% | `;
-                        resultText += `Schema: ${(c.schema_match.score * 100).toFixed(0)}% | `;
-                        resultText += `Rows: ${(c.rows_match.score * 100).toFixed(0)}% | `;
-                        resultText += `Struct: ${(c.structural_similarity.score * 100).toFixed(0)}% | `;
-                        resultText += `LLM: ${(c.llm_grading.score * 100).toFixed(0)}%`;
+                        // Only show Results match and Query similarity (llm_score)
+                        const resultsMatch = (c.results_match && c.results_match.score !== undefined && c.results_match.score !== null) ? `${(c.results_match.score * 100).toFixed(0)}%` : 'N/A';
+                        const querySimilarity = (scoreData.llm_score !== undefined && scoreData.llm_score !== null) ? `${(scoreData.llm_score * 100).toFixed(0)}%` : 'N/A';
+                        resultText += `Results match: ${resultsMatch} | Query similarity: ${querySimilarity}`;
                         resultText += `</span>`;
                     }
                     messageEl.innerHTML = `<div style="color: #6c757d; font-family: monospace; margin-bottom: 8px;">${message}</div><div style="color: ${statusColor};">${resultText}</div>`;
@@ -5011,8 +5299,7 @@ async function processQuestionWithRetry(question) {
                     <div style="font-weight: bold; color: #667eea; margin-bottom: 10px;">🤖 Model Information</div>
                     <div style="color: #666; font-size: 0.9rem; margin-bottom: 5px;"><strong>Deployment:</strong> ${escapeHtml(modelInfo.deployment || 'Unknown')}</div>
                     <div style="color: #666; font-size: 0.9rem; margin-bottom: 10px;"><strong>API Version:</strong> ${escapeHtml(modelInfo.api_version || 'Unknown')}</div>
-                    ${summary.json_report_path ? `<div style="color: #28a745; font-size: 0.9rem; margin-bottom: 5px;"><strong>📊 JSON Report:</strong> ${escapeHtml(summary.json_report_path)}</div>` : ''}
-                    ${summary.excel_report_path ? `<div style="color: #28a745; font-size: 0.9rem; margin-bottom: 10px;"><strong>📊 Excel Report:</strong> ${escapeHtml(summary.excel_report_path)}</div>` : ''}
+                    
                     <div style="font-weight: bold; color: #667eea; margin-bottom: 5px;">📝 System Prompt</div>
                     <div style="color: #666; font-size: 0.85rem; font-family: monospace; background: #f8f9fa; padding: 10px; border-radius: 4px; white-space: pre-wrap;">${escapeHtml(systemPrompt)}</div>
                 </div>
@@ -5036,7 +5323,6 @@ async function processQuestionWithRetry(question) {
             if (failed.length > 0) {
                 failedList.innerHTML = failed.map(r => {
                     let reasonHtml = escapeHtml(r.reason || 'Unknown error');
-                    
                     // Format error message if it contains generated query
                     if (r.reason && r.reason.startsWith('Generated Query:')) {
                         const parts = r.reason.split('\n\nFailed to run: ');
@@ -5046,24 +5332,21 @@ async function processQuestionWithRetry(question) {
                             reasonHtml = `<div style="color: #6c757d; font-family: monospace; white-space: pre-wrap; margin-bottom: 8px;">${escapeHtml(queryPart)}</div><div style="color: #dc3545;">Failed to run: ${escapeHtml(errorPart)}</div>`;
                         }
                     }
-                    
                     // Add score information if available (for queries that ran but didn't meet threshold)
                     let scoreHtml = '';
-                    if (r.score) {
+                    if (r.score && typeof r.score === 'object' && r.score !== null && r.score.components) {
                         const score = r.score;
-                        const c = score.components;
+                        const c = score.components || {};
                         const scorePercent = (score.total_score * 100).toFixed(1);
+                        const resultsMatch = (c.results_match && c.results_match.score !== undefined && c.results_match.score !== null) ? `${(c.results_match.score * 100).toFixed(0)}%` : 'N/A';
+                        const querySimilarity = (score.query_similarity !== undefined && score.query_similarity !== null) ? `${(score.query_similarity * 100).toFixed(0)}%` : 'N/A';
                         scoreHtml = `<div style="margin-top: 5px; font-size: 0.85rem; color: #dc3545;">
                             <strong>Score: ${scorePercent}% (FAIL - threshold: 90%)</strong><br>
                             <span style="font-size: 0.8rem; color: #666;">
-                                Results: ${(c.results_match.score * 100).toFixed(0)}% | 
-                                Struct: ${(c.structural_similarity.score * 100).toFixed(0)}% | 
-                                LLM: ${(c.llm_grading.score * 100).toFixed(0)}%
+                                Results match: ${resultsMatch} | Query similarity: ${querySimilarity}
                             </span>
-                            ${c.llm_grading.details.reasoning ? `<br><span style="font-size: 0.8rem; font-style: italic;">${escapeHtml(c.llm_grading.details.reasoning)}</span>` : ''}
                         </div>`;
                     }
-                    
                     return `
                     <div style="margin-bottom: 10px; padding: 10px; background: #fff5f5; border-left: 3px solid #dc3545; border-radius: 4px;">
                         <div style="font-weight: bold; color: #dc3545; margin-bottom: 5px;">Row ${r.row}</div>
@@ -5081,21 +5364,19 @@ async function processQuestionWithRetry(question) {
             if (wrongQuery.length > 0) {
                 wrongQueryList.innerHTML = wrongQuery.map(r => {
                     let scoreHtml = '';
-                    if (r.score) {
+                    if (r.score && typeof r.score === 'object' && r.score !== null && r.score.components) {
                         const score = r.score;
-                        const c = score.components;
+                        const c = score.components || {};
                         const scorePercent = (score.total_score * 100).toFixed(1);
+                        const resultsMatch = (c.results_match && c.results_match.score !== undefined && c.results_match.score !== null) ? `${(c.results_match.score * 100).toFixed(0)}%` : 'N/A';
+                        const querySimilarity = (score.query_similarity !== undefined && score.query_similarity !== null) ? `${(score.query_similarity * 100).toFixed(0)}%` : 'N/A';
                         scoreHtml = `<div style="margin-top: 5px; font-size: 0.85rem; color: #ff9800;">
                             <strong>Score: ${scorePercent}% (Below 90% threshold)</strong><br>
                             <span style="font-size: 0.8rem; color: #666;">
-                                Results: ${(c.results_match.score * 100).toFixed(0)}% | 
-                                Struct: ${(c.structural_similarity.score * 100).toFixed(0)}% | 
-                                LLM: ${(c.llm_grading.score * 100).toFixed(0)}%
+                                Results match: ${resultsMatch} | Query similarity: ${querySimilarity}
                             </span>
-                            ${c.llm_grading.details.reasoning ? `<br><span style="font-size: 0.8rem; font-style: italic;">${escapeHtml(c.llm_grading.details.reasoning)}</span>` : ''}
                         </div>`;
                     }
-                    
                     return `
                     <div style="margin-bottom: 10px; padding: 10px; background: #fff9e6; border-left: 3px solid #ff9800; border-radius: 4px;">
                         <div style="font-weight: bold; color: #ff9800; margin-bottom: 5px;">Row ${r.row}</div>
@@ -5113,22 +5394,21 @@ async function processQuestionWithRetry(question) {
             if (success.length > 0) {
                 successList.innerHTML = success.map(r => {
                     let scoreHtml = '';
-                    if (r.score) {
+                    if (r.score && typeof r.score === 'object' && r.score !== null && r.score.components) {
                         const score = r.score;
-                        const c = score.components;
+                        const c = score.components || {};
                         const scorePercent = (score.total_score * 100).toFixed(1);
                         const passStatus = score.is_successful ? 'PASS' : 'FAIL';
                         const statusColor = score.is_successful ? '#28a745' : '#dc3545';
+                        const resultsMatch = (c.results_match && c.results_match.score !== undefined && c.results_match.score !== null) ? `${(c.results_match.score * 100).toFixed(0)}%` : 'N/A';
+                        const querySimilarity = (score.query_similarity !== undefined && score.query_similarity !== null) ? `${(score.query_similarity * 100).toFixed(0)}%` : 'N/A';
                         scoreHtml = `<div style="margin-top: 5px; font-size: 0.85rem;">
                             <strong style="color: ${statusColor};">Score: ${scorePercent}% (${passStatus})</strong><br>
                             <span style="font-size: 0.8rem; color: #666;">
-                                Results: ${(c.results_match.score * 100).toFixed(0)}% | 
-                                Struct: ${(c.structural_similarity.score * 100).toFixed(0)}% | 
-                                LLM: ${(c.llm_grading.score * 100).toFixed(0)}%
+                                Results match: ${resultsMatch} | Query similarity: ${querySimilarity}
                             </span>
                         </div>`;
                     }
-                    
                     return `
                     <div style="margin-bottom: 10px; padding: 10px; background: #f0f9f4; border-left: 3px solid #28a745; border-radius: 4px;">
                         <div style="font-weight: bold; color: #28a745; margin-bottom: 5px;">Row ${r.row}</div>
@@ -5205,6 +5485,35 @@ async function processQuestionWithRetry(question) {
                 showSuccess('Results file downloaded successfully!');
             } catch (error) {
                 showError(`Failed to download: ${error.message}`);
+            }
+        }
+
+        function downloadBatchJsonResults() {
+            if (!batchResultsData || !batchResultsData.jsonFileData) {
+                showError('No JSON results available to download');
+                return;
+            }
+
+            try {
+                // Decode base64 data
+                const binaryString = atob(batchResultsData.jsonFileData);
+                const bytes = new Uint8Array(binaryString.length);
+                for (let i = 0; i < binaryString.length; i++) {
+                    bytes[i] = binaryString.charCodeAt(i);
+                }
+                // Create blob and download
+                const blob = new Blob([bytes], { type: 'application/json' });
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = batchResultsData.jsonFilename || 'results.json';
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                window.URL.revokeObjectURL(url);
+                showSuccess('JSON results file downloaded successfully!');
+            } catch (error) {
+                showError(`Failed to download JSON: ${error.message}`);
             }
         }
 

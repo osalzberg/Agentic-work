@@ -44,6 +44,25 @@ except ImportError:
 _DEFAULT_SYSTEM_PROMPT = "Translate the user prompt to KQL (Kusto Query Language) to run on an Azure Log Analytics workspace. Return ONLY the KQL query code with no explanations, comments, or additional text. NEVER use the old Application Insights schema, only tables listed in this page: https://learn.microsoft.com/en-us/azure/azure-monitor/reference/tables-index#application-insights"
 SYSTEM_PROMPT = os.environ.get("KQL_SYSTEM_PROMPT", _DEFAULT_SYSTEM_PROMPT)
 
+# Global system prompt override for web interface
+_system_prompt_override: str | None = None
+
+def set_system_prompt_override(system_prompt: str | None) -> None:
+    """Set a global system prompt override for the current request."""
+    global _system_prompt_override
+    _system_prompt_override = system_prompt
+    if system_prompt:
+        print(f"[debug:] System prompt override set")
+
+def clear_system_prompt_override() -> None:
+    """Clear the global system prompt override."""
+    global _system_prompt_override
+    _system_prompt_override = None
+
+def get_system_prompt() -> str:
+    """Get the current system prompt (override if set, otherwise default)."""
+    return _system_prompt_override if _system_prompt_override else SYSTEM_PROMPT
+
 # ------------------------- File Loading Helpers ------------------------- #
 
 def _safe_read(path: str) -> str:

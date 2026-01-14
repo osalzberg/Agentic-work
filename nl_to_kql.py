@@ -10,7 +10,7 @@ import re
 from typing import List, Optional, Dict, Tuple
 from datetime import datetime
 
-from prompt_builder import build_prompt, stable_hash, SYSTEM_PROMPT  # type: ignore
+from prompt_builder import build_prompt, stable_hash, get_system_prompt  # type: ignore
 
 from azure_openai_utils import (
     run_chat,
@@ -740,7 +740,7 @@ def _attempt_translation(nl_question, use_slim_prompt: bool = False):
         return f"// Error: {err_msg} [domain=containers selected_example_count=0]"
     
     # Use only the static system prompt - no layering, examples, or additional content
-    system_prompt = SYSTEM_PROMPT
+    system_prompt = get_system_prompt()
     
     # Build minimal metadata for logging purposes only
     layered_meta = {

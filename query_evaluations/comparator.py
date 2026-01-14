@@ -1,4 +1,37 @@
+
 from __future__ import annotations
+
+def fuzzy_column_alignment(expected_cols: List[str], actual_cols: List[str]) -> Dict[str, int]:
+    """
+    Returns a mapping from expected column index to actual column index using fuzzy matching.
+    Only columns that can be mapped are included.
+    """
+    exp_norm = [_norm_col(c) for c in expected_cols]
+    act_norm = [_norm_col(c) for c in actual_cols]
+    col_map = {}  # expected index -> actual index
+    used_actual = set()
+    for i, exp_c in enumerate(exp_norm):
+        # Try exact match first
+        found = False
+        for j, act_c in enumerate(act_norm):
+            if j in used_actual:
+                continue
+            if exp_c == act_c:
+                col_map[i] = j
+                used_actual.add(j)
+                found = True
+                break
+        if not found:
+            # Fuzzy: substring match
+            for j, act_c in enumerate(act_norm):
+                if j in used_actual:
+                    continue
+                if exp_c in act_c or act_c in exp_c:
+                    col_map[i] = j
+                    used_actual.add(j)
+                    found = True
+                    break
+    return col_map
 
 import csv
 from typing import Any, Dict, List, Tuple, Optional
@@ -37,65 +70,23 @@ def compare_schema(expected_cols: List[str], actual_cols: List[str], strict_orde
     # Normalize column names for comparisons (ignore case, hyphens, underscores)
     exp_norm_list = [_norm_col(c) for c in expected_cols]
     act_norm_list = [_norm_col(c) for c in actual_cols]
-
-    # Binary match on normalized columns
+    # Use shared fuzzy alignment
+    col_map = fuzzy_column_alignment(expected_cols, actual_cols)
+    mapped_expected_idxs = list(col_map.keys())
+    mapped_actual_idxs = [col_map[i] for i in mapped_expected_idxs]
+    # For schema, overlap = number of mapped columns
+    overlap_count = len(mapped_expected_idxs)
+    exp_count = len(exp_norm_list) or 1
+    overlap_ratio = overlap_count / float(exp_count)
+    # Missing: expected columns that could not be mapped
+    missing = [expected_cols[i] for i in range(len(expected_cols)) if i not in mapped_expected_idxs]
+    # Extra: actual columns that were not mapped
+    extra = [actual_cols[j] for j in range(len(actual_cols)) if j not in mapped_actual_idxs]
+    # Match: all expected columns are mapped
     if strict_order:
-        result["match"] = exp_norm_list == act_norm_list
+        result["match"] = exp_norm_list == [act_norm_list[col_map[i]] if i in col_map else None for i in range(len(expected_cols))]
     else:
-        result["match"] = set(exp_norm_list) == set(act_norm_list)
-
-    # Calibrated overlap scoring (order-insensitive): fraction of expected columns present in actual
-    exp_set = set(exp_norm_list)
-    act_set = set(act_norm_list)
-    overlap = exp_set.intersection(act_set)
-    overlap_count = len(overlap)
-    exp_count = len(exp_set) or 1
-    overlap_ratio = overlap_count / float(exp_count)
-    missing_norm = list(exp_set - act_set)
-    extra_norm = list(act_set - exp_set)
-
-    # Fuzzy match missing vs extra: if a missing column is a substring of an extra (or vice versa), consider them matched
-    matched_pairs = []
-    remaining_missing = []
-    remaining_extra = list(extra_norm)
-    
-    for miss in missing_norm:
-        matched = False
-        for extra in remaining_extra:
-            # Check if one is a substring of the other (e.g., "name" in "podname")
-            if miss in extra or extra in miss:
-                matched_pairs.append((miss, extra))
-                remaining_extra.remove(extra)
-                matched = True
-                break
-        if not matched:
-            remaining_missing.append(miss)
-    
-    # Update overlap count to include fuzzy matches
-    overlap_count += len(matched_pairs)
-    overlap_ratio = overlap_count / float(exp_count)
-    
-    # Update match result: if all expected columns are accounted for (exact or fuzzy), it's a match
-    if not strict_order:
-        result["match"] = len(remaining_missing) == 0
-
-    # Map missing/extra back to original names for readability (first occurrence wins)
-    def _originals_for_norm(norm_keys: List[str], originals: List[str]) -> List[str]:
-        out: List[str] = []
-        seen = set()
-        for nk in norm_keys:
-            if nk in seen:
-                continue
-            for orig in originals:
-                if _norm_col(orig) == nk:
-                    out.append(orig)
-                    seen.add(nk)
-                    break
-        return out
-
-    missing = _originals_for_norm(remaining_missing, expected_cols)
-    extra = _originals_for_norm(remaining_extra, actual_cols)
-
+        result["match"] = len(missing) == 0
     result["details"] = {
         "overlap_count": overlap_count,
         "expected_count": exp_count,
@@ -142,53 +133,58 @@ def compare_rows(expected_rows: List[List[str]], actual_rows: List[List[str]], s
         "details": {}
     }
 
+    # --- NEW: Fuzzy column alignment and ignore extras ---
+    # If available, get column headers from context (assume attached as attributes for this function)
+    expected_cols = getattr(compare_rows, "expected_cols", None)
+    actual_cols = getattr(compare_rows, "actual_cols", None)
+    if expected_cols is not None and actual_cols is not None:
+        col_map = fuzzy_column_alignment(expected_cols, actual_cols)
+        mapped_expected_idxs = list(col_map.keys())
+        mapped_actual_idxs = [col_map[i] for i in mapped_expected_idxs]
+        reduced_expected = [[row[i] for i in mapped_expected_idxs] for row in expected_rows]
+        reduced_actual = [[row[j] for j in mapped_actual_idxs] for row in actual_rows]
+    else:
+        reduced_expected = expected_rows
+        reduced_actual = actual_rows
+
     if strict_order:
         # Position-wise comparison; count matched rows
         matched = 0
-        min_len = min(exp_count, act_count)
+        min_len = min(len(reduced_expected), len(reduced_actual))
         mismatches = 0
-        for r1, r2 in zip(expected_rows[:min_len], actual_rows[:min_len]):
+        for r1, r2 in zip(reduced_expected[:min_len], reduced_actual[:min_len]):
             if _row_equal(r1, r2):
                 matched += 1
             else:
                 mismatches += 1
-        # Any extra rows count as mismatches
-        mismatches += abs(exp_count - act_count)
+        mismatches += abs(len(reduced_expected) - len(reduced_actual))
         result["mismatches"] = mismatches
-        result["match"] = (mismatches == 0 and exp_count == act_count)
-        overlap_ratio = (matched / float(exp_count or 1))
+        result["match"] = (mismatches == 0 and len(reduced_expected) == len(reduced_actual))
+        overlap_ratio = (matched / float(len(reduced_expected) or 1))
         result["details"] = {
             "matched_count": matched,
-            "expected_count": exp_count,
-            "actual_count": act_count,
+            "expected_count": len(reduced_expected),
+            "actual_count": len(reduced_actual),
             "overlap_ratio": overlap_ratio,
             "strict_order": True,
         }
         return result
     else:
-        # Order-insensitive compare: treat rows as multisets with numeric tolerance aware equality
         from collections import Counter
-
         def _norm_row(r: List[str]) -> Tuple[str, ...]:
-            # Normalize row by string values only; numeric tolerances are applied via _row_equal during matching
-            return tuple(r)
-
-        # Build counters for quick frequency comparison
-        c_expected = Counter(_norm_row(r) for r in expected_rows)
-        c_actual = Counter(_norm_row(r) for r in actual_rows)
-
-        # Compute matched count as multiset intersection cardinality
+            return tuple(sorted(r))
+        c_expected = Counter(_norm_row(r) for r in reduced_expected)
+        c_actual = Counter(_norm_row(r) for r in reduced_actual)
         matched = 0
         for row, cnt in c_expected.items():
             matched += min(cnt, c_actual.get(row, 0))
-
-        overlap_ratio = (matched / float(exp_count or 1))
+        overlap_ratio = (matched / float(len(reduced_expected) or 1))
         result["match"] = c_expected == c_actual
         result["mismatches"] = 0 if result["match"] else abs(sum(c_expected.values()) - sum(c_actual.values()))
         result["details"] = {
             "matched_count": matched,
-            "expected_count": exp_count,
-            "actual_count": act_count,
+            "expected_count": len(reduced_expected),
+            "actual_count": len(reduced_actual),
             "overlap_ratio": overlap_ratio,
             "strict_order": False,
         }

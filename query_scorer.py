@@ -39,7 +39,6 @@ def calculate_llm_graded_score(generated_kql: str, expected_kql: str, prompt: st
         
         details = {
             "score": score,
-            "reasoning": f"LLM similarity score based on semantic equivalence (ignoring column name differences)",
             "model": actual_model
         }
         
@@ -189,23 +188,9 @@ def calculate_total_score(
             rows_match["details"]["generated_count"] = generated_count
             rows_match["details"]["count_diff"] = count_diff
     
-    # 3. Structural similarity using query_evaluations kql_parser
-    def normalize_kql(kql: str) -> str:
-        """Simple normalization for comparison."""
-        import re
-        s = kql.replace("\r\n", "\n").replace("\r", "\n")
-        lines = [ln for ln in s.split("\n") if not re.match(r"^\s*//", ln)]
-        return " ".join(lines).strip()
-    
-    normalized_expected = normalize_kql(expected_kql)
-    normalized_generated = normalize_kql(generated_kql)
-    
-    semantic_comparison = compare_kql_semantic(normalized_expected, normalized_generated, prompt)
-    structural_score = semantic_comparison.get('similarity', 0.0)
-    
-    # 4. LLM grading (uses same Azure OpenAI deployment as query generation)
-    llm_score, llm_details = calculate_llm_graded_score(generated_kql, expected_kql, prompt)
-    
+    # 3. LLM grading (uses same Azure OpenAI deployment as query generation)
+    query_similarity, query_similarity_details = calculate_llm_graded_score(generated_kql, expected_kql, prompt)
+
     # Combine schema and rows into results_match (weighted average within the component)
     # Results match: 50% schema + 50% rows (when rows available)
     if rows_score_na:
@@ -215,28 +200,26 @@ def calculate_total_score(
     else:
         # Combine schema and rows equally
         results_match_score = 0.5 * schema_score + 0.5 * rows_score
-    
-    # New weights: results_match (55%), structural (15%), LLM (30%)
+
+    # New weights: results_match (50%), LLM (50%)
     # Execution success is not part of the score - it's a gate
     weights = {
-        "results_match": 0.55,
-        "structural_similarity": 0.15,
-        "llm_graded_similarity": 0.30,
+        "results_match": 0.5,
+        "query_similarity": 0.5,
     }
-    
+
     # Build metrics dict for scoring with new structure
     metrics = {
         "results_match": results_match_score,
-        "structural_similarity": structural_score,
-        "llm_graded_similarity": llm_score,
+        "query_similarity": query_similarity,
     }
-    
+
     # Calculate weighted score
     total_score = score_test(metrics, weights)
-    
+
     # Success threshold: 0.9
     is_successful = total_score >= 0.9
-    
+
     return {
         "total_score": round(total_score, 3),
         "is_successful": is_successful,
@@ -255,17 +238,12 @@ def calculate_total_score(
                     "rows_details": rows_match.get("details", {})
                 }
             },
-            "structural_similarity": {
-                "score": round(structural_score, 3),
-                "weighted_score": round(structural_score * weights["structural_similarity"], 3),
-                "weight": weights["structural_similarity"],
-                "details": semantic_comparison.get("details", {})
-            },
-            "llm_grading": {
-                "score": round(llm_score, 3),
-                "weighted_score": round(llm_score * weights["llm_graded_similarity"], 3),
-                "weight": weights["llm_graded_similarity"],
-                "details": llm_details
+            "query_similarity": {
+                "score": round(query_similarity, 3),
+                "weighted_score": round(query_similarity * weights["query_similarity"], 3),
+                "weight": weights["query_similarity"],
+                "details": query_similarity_details
             }
-        }
+        },
+        "query_similarity": query_similarity
     }
