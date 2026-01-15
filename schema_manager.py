@@ -336,10 +336,11 @@ class SchemaManager:
     def _union_enumerate_tables(self, workspace_id: str) -> list[Dict[str, Any]]:
         _azure_credential= _get_azure_credential()
         if LogsQueryClient is None or _azure_credential is None:
+            print("[SchemaManager] Union enumeration skipped: LogsQueryClient or credential not available")
             return []
         try:
             client = LogsQueryClient(_azure_credential)
-            # Use union with summarize - this needs to scan data to find tables
+            # Try shorter timespan first (7 days) for faster response
             query = (
                 "union withsource=TableName * "
                 "| summarize count() by TableName "
@@ -347,13 +348,14 @@ class SchemaManager:
                 "| sort by TableName asc"
             )
             t0 = time.time()
-            print(f"[SchemaManager] Union enumeration start workspace={workspace_id} timespan_days=30")
-            # Use 30 days to ensure we find tables - with server timeout to prevent hanging
+            print(f"[SchemaManager] Union enumeration start workspace={workspace_id} timespan_days=7")
+            
+            # Try 7 days first for faster response
             resp = client.query_workspace(
                 workspace_id=workspace_id, 
                 query=query, 
-                timespan=timedelta(days=30),
-                server_timeout=120  # 2 minute server timeout
+                timespan=timedelta(days=7),
+                server_timeout=60  # 1 minute server timeout
             )
             tables: list[Dict[str, Any]] = []
             if hasattr(resp, "tables") and resp.tables:
@@ -361,10 +363,27 @@ class SchemaManager:
                 for row in getattr(first, "rows", []):
                     if row and row[0]:
                         tables.append({"name": str(row[0])})
-            print(f"[SchemaManager] Union enumeration done tables={len(tables)} duration_s={time.time()-t0:.3f}")
+            
+            duration = time.time()-t0
+            print(f"[SchemaManager] Union enumeration done tables={len(tables)} duration_s={duration:.3f}")
+            
+            # If we got tables, return them
+            if len(tables) > 0:
+                return tables
+            
+            # If no tables found, provide helpful diagnostic info
+            print(f"[SchemaManager] WARNING: Union query returned 0 tables.")
+            print(f"  Workspace ID: {workspace_id}")
+            print(f"  Response status: {getattr(resp, 'status', 'unknown')}")
+            print(f"  This workspace may have no data in the last 7 days, or there may be authentication issues.")
+            print(f"  The application will continue to work for queries, but table discovery is unavailable.")
+            
             return tables
         except Exception as e:  # pragma: no cover
-            print(f"[SchemaManager] Union enumeration error: {e}")
+            print(f"[SchemaManager] Union enumeration error: {type(e).__name__}: {e}")
+            import traceback
+            print(f"[SchemaManager] Union enumeration traceback:\n{traceback.format_exc()}")
+            print(f"[SchemaManager] The application will continue to work for queries, but table discovery is unavailable.")
             return []
 
 # Convenience functional wrapper

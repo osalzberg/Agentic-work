@@ -688,11 +688,12 @@ def workspace_schema_status():
 
     Returns JSON:
       success: bool
-      status: 'uninitialized' | 'ready' | 'empty' | 'disabled'
+      status: 'uninitialized' | 'ready' | 'empty' | 'disabled' | 'query-only'
       workspace_id: str|None
       table_count: int
       retrieved_at: str|None
       source: str|None
+      message: str (optional, for empty/query-only status)
     """
     global workspace_id
     if not workspace_id:
@@ -703,10 +704,22 @@ def workspace_schema_status():
     if result.get('error'):
         return jsonify({'success': False, 'status': 'error', 'workspace_id': workspace_id, 'error': result.get('error'), 'table_count': 0, 'retrieved_at': None, 'source': None})
     tables = result.get('tables', [])
-    status = 'ready' if tables else 'empty'
+    
+    # If no tables found, return query-only status (app still works for queries)
+    if not tables:
+        return jsonify({
+            'success': True,
+            'status': 'query-only',
+            'workspace_id': workspace_id,
+            'table_count': 0,
+            'retrieved_at': result.get('retrieved_at'),
+            'source': result.get('source'),
+            'message': 'Table discovery unavailable. You can still run KQL queries by typing them directly.'
+        })
+    
     return jsonify({
         'success': True,
-        'status': status,
+        'status': 'ready',
         'workspace_id': workspace_id,
         'table_count': len(tables),
         'retrieved_at': result.get('retrieved_at'),
