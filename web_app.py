@@ -61,7 +61,10 @@ def get_user_token():
     # Azure App Service Easy Auth provides the token in this header
     token = request.headers.get('X-MS-TOKEN-AAD-ACCESS-TOKEN')
     if token:
-        print(f"[Auth] Using authenticated user's token")
+        print(f"[Auth] ✅ Using authenticated user's token (length: {len(token)})")
+    else:
+        print(f"[Auth] ⚠️ No user token found in headers. Available headers: {list(request.headers.keys())}")
+        print(f"[Auth] ⚠️ Azure AD auth might not be configured or user not logged in")
     return token
 
 # Legacy compatibility globals (removed caching logic, retained empty structures for tests/UI expecting them)
