@@ -45,6 +45,9 @@ from examples_loader import load_capsule_csv_queries  # CSV capsule queries
 
 
 app = Flask(__name__)
+# Disable template caching for development
+app.config['TEMPLATES_AUTO_RELOAD'] = True
+app.config['SEND_FILE_MAX_AGE_DEFAULT'] = 0
 # Ensure workspace_id is defined before any early cache load attempts to avoid NameError
 workspace_id = None
 
