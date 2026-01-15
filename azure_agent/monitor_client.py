@@ -3,65 +3,23 @@
 This module provides a class for authenticating and querying Azure Monitor (Log Analytics) using the Azure SDK.
 All methods are heavily commented for clarity and learning.
 """
-from azure.identity import AzureCliCredential, DefaultAzureCredential
-from azure.monitor.query import LogsQueryClient, LogsQueryStatus
+from utils.kql_exec import get_logs_client, execute_kql_query
+
 
 class AzureMonitorAgent:
     def __init__(self):
-        """
-        Initialize the AzureMonitorAgent with Azure CLI credentials if available,
-        otherwise fall back to DefaultAzureCredential.
-        """
-        try:
-            # Try Azure CLI credentials first
-            self.credential = AzureCliCredential()
-            # This will raise if az is not installed or not logged in
-            _ = self.credential.get_token("https://management.azure.com/.default")
-        except Exception:
-            # Fallback to DefaultAzureCredential (env vars, managed identity, etc.)
-            self.credential = DefaultAzureCredential()
-        self.client = LogsQueryClient(self.credential)
+        """Light wrapper that delegates to `utils.kql_exec` for client and execution."""
+        self.client = get_logs_client()
 
     def query_log_analytics(self, workspace_id, kql_query, timespan=None):
-        """
-        Run a KQL query against a Log Analytics workspace.
-        Args:
-            workspace_id (str): The Log Analytics workspace ID (GUID).
-            kql_query (str): The Kusto Query Language (KQL) query to run.
-            timespan (str or tuple): ISO8601 duration or (start, end) tuple.
-        Returns:
-            dict: Query results or error message.
-        """
         try:
-            response = self.client.query_workspace(
-                workspace_id=workspace_id,
-                query=kql_query,
-                timespan=timespan
-            )
-            # Convert LogsTable objects to dicts manually
-            if response.status == LogsQueryStatus.SUCCESS:
-                tables = []
-                for table in response.tables:
-                    # Defensive: skip if table is not a LogsTable object
-                    if not hasattr(table, 'name') or not hasattr(table, 'columns') or not hasattr(table, 'rows'):
-                        continue
-                    # Defensive: columns may be a list of dicts or strings, handle both
-                    columns = []
-                    for col in getattr(table, 'columns', []):
-                        if hasattr(col, 'name'):
-                            columns.append(col.name)
-                        elif isinstance(col, dict) and 'name' in col:
-                            columns.append(col['name'])
-                        else:
-                            columns.append(str(col))
-                    table_dict = {
-                        'name': getattr(table, 'name', ''),
-                        'columns': columns,
-                        'rows': getattr(table, 'rows', [])
-                    }
-                    tables.append(table_dict)
-                return {"tables": tables}
-            else:
-                return {"error": getattr(response, 'partial_error', None)}
+            exec_result = execute_kql_query(kql=kql_query, workspace_id=workspace_id, client=self.client, timespan=timespan)
+            # Note: `exec_result['exec_stats']['status']` is normalized to an
+            # upper-case string (e.g. "SUCCESS"). The SDK enum is preserved as
+            # `exec_stats['raw_status']` when available. Consumers should prefer
+            # `utils.kql_exec.is_success(...)` when checking success.
+            if exec_result.get("tables") is not None:
+                return {"tables": exec_result.get("tables")}
+            return {"error": exec_result.get("exec_stats", {}).get("error")}
         except Exception as e:
             return {"error": str(e)}

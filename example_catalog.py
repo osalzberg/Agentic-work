@@ -6,13 +6,14 @@ optionally enriches them with live column schema retrieved from Azure Monitor.
 Lightweight parsing intentionally conservative: we extract candidate KQL lines
 that look query-like (contain a pipe `|`) or code fenced blocks.
 """
+
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Dict, List, Optional, Any
-import re
+from typing import Any, Dict, List, Optional
 
 try:
     from azure.identity import DefaultAzureCredential  # type: ignore
@@ -133,32 +134,51 @@ def _parse_examples(md_path: Path, limit: int = 8) -> List[ExampleEntry]:
 
 
 def _get_logs_client() -> Optional[LogsQueryClient]:  # pragma: no cover
-    if LogsQueryClient is None or DefaultAzureCredential is None:
-        return None
     try:
-        return LogsQueryClient(DefaultAzureCredential(exclude_interactive_browser_credential=False))
+        from utils.kql_exec import get_logs_client
+
+        return get_logs_client()
     except Exception:
         return None
 
 
-def _fetch_table_columns(workspace_id: str, table: str, client: LogsQueryClient) -> List[str]:  # pragma: no cover network
+def _fetch_table_columns(
+    workspace_id: str, table: str, client: LogsQueryClient
+) -> List[str]:  # pragma: no cover network
     try:
         # Minimal schema hint: no row retrieval cost (should be metadata only)
         query = f"{table} | take 0"
         # azure-monitor-query requires a timespan; use 1h baseline
         from datetime import timedelta
-        resp = client.query_workspace(workspace_id=workspace_id, query=query, timespan=timedelta(hours=1))
-        if hasattr(resp, "tables") and resp.tables:  # type: ignore[attr-defined]
-            tbl = resp.tables[0]
-            cols = [getattr(c, "name", str(c)) for c in getattr(tbl, "columns", [])]
-            # Filter obviously synthetic columns
-            return [c for c in cols if c]
+
+        try:
+            # Prefer using the provided client if it's a real SDK client
+            if client is not None and hasattr(client, "query_workspace"):
+                resp = client.query_workspace(
+                    workspace_id=workspace_id, query=query, timespan=timedelta(hours=1)
+                )
+                if hasattr(resp, "tables") and resp.tables:  # type: ignore[attr-defined]
+                    tbl = resp.tables[0]
+                    cols = [getattr(c, "name", str(c)) for c in getattr(tbl, "columns", [])]
+                    return [c for c in cols if c]
+        except Exception:
+            # Fallback to canonical exec wrapper which may handle non-SDK backends
+            from utils.kql_exec import execute_kql_query
+
+            exec_result = execute_kql_query(kql=query, workspace_id=workspace_id, client=client, timespan=timedelta(hours=1))
+            tables = exec_result.get("tables", [])
+            if tables:
+                first = tables[0]
+                cols = first.get("columns", []) if isinstance(first, dict) else []
+                return [c for c in cols if c]
     except Exception:
         return []
     return []
 
 
-def load_example_catalog(workspace_id: Optional[str], include_schema: bool = True, force: bool = False) -> Dict[str, Any]:
+def load_example_catalog(
+    workspace_id: Optional[str], include_schema: bool = True, force: bool = False
+) -> Dict[str, Any]:
     """Return catalog structure.
 
     Caches per workspace id (schema may differ by workspace). If workspace is None
@@ -203,9 +223,7 @@ def load_example_catalog(workspace_id: Optional[str], include_schema: bool = Tru
                 "description": t.description,
                 "category": t.category,
                 "columns": t.columns,
-                "examples": [
-                    {"title": e.title, "kql": e.kql} for e in t.examples
-                ],
+                "examples": [{"title": e.title, "kql": e.kql} for e in t.examples],
             }
             for t in tables.values()
         },

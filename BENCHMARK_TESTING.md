@@ -1,4 +1,4 @@
-# Batch Testing KQL Queries from CSV/Excel
+# Benchmark Testing KQL Queries from CSV/Excel
 
 This tool allows you to test multiple natural language prompts in batch by reading them from CSV or Excel files, generating KQL queries, and writing the results back.
 
@@ -22,7 +22,7 @@ python create_test_template.py
 
 2. Edit `test_prompts_template.xlsx` and add your prompts
 
-3. Run the batch test:
+3. Run the benchmark:
 ```bash
 python benchmark_queries.py test_prompts_template.xlsx
 ```
@@ -69,8 +69,8 @@ python benchmark_queries.py input.xlsx --output results.xlsx
 python benchmark_queries.py input.xlsx \
   --prompt-col "Question" \
   --output-col "Answer" \
-  --reason-col "Status"CSV or Excel file | (required) |
-| `-o, --output` | Path to output file (same format as input) | `input_results_TIMESTAMP.{csv\|xlsx}
+  --reason-col "Status"
+```
 
 ## Command Line Options
 
@@ -104,13 +104,6 @@ Top 3 browser exceptions,"AppExceptions | top 3..."
 ```
 
 The tool automatically detects headerless CSV files and assigns standard column names.
-```
-| Prompt                                    | Expected Query | Generated Query | Reason |
-|-------------------------------------------|----------------|-----------------|--------|
-| Show me failed requests from last hour    |                |                 |        |
-| Top 3 browser exceptions                  |                |                 |        |
-| Failing dependencies                      |                |                 |        |
-```
 
 ### Output Format
 ```
@@ -154,7 +147,7 @@ python benchmark_queries.py test_prompts.xlsx --output my_results.xlsx
 The script will:
 1. Read prompts from the input Excel file
 2. Generate KQL queries for each prompt using the agent
-3. Write geCSV file: test_prompts.csvated Query" column
+3. Write generated queries into the "Generated Query" column
 4. Write success/error status to the "Reason" column
 5. Save results to the output file
 

@@ -1,19 +1,23 @@
 """Shared Azure OpenAI helper utilities to centralize configuration, version selection,
 payload construction, and URL building for both translation and explanation paths.
 """
+
 from __future__ import annotations
+
+import hashlib
+import json
 import os
 import re
-from typing import Dict, Tuple, Any, List, Optional, Callable
-from dataclasses import dataclass, asdict
-import json
 import time
+from dataclasses import asdict, dataclass
+from datetime import UTC, datetime
+from typing import Any, Callable, Dict, List, Optional, Tuple
+
 import requests
-import hashlib
-from datetime import datetime, UTC
 
 try:  # Optional dependency; don't fail if missing
     from dotenv import load_dotenv  # type: ignore
+
     load_dotenv()
 except Exception:
     pass
@@ -21,10 +25,13 @@ except Exception:
 DEFAULT_STANDARD_API_VERSION = "2024-09-01-preview"
 DEFAULT_O_MODELS_API_VERSION = "2024-12-01-preview"
 
+
 # ---------------------------------------------------------------------------
 # API Version Selection (Item 1)
 # ---------------------------------------------------------------------------
-def select_api_version(deployment: str, api_version_override: Optional[str]) -> Tuple[str, bool]:
+def select_api_version(
+    deployment: str, api_version_override: Optional[str]
+) -> Tuple[str, bool]:
     """Return (api_version, is_override) based on override env or deployment family.
 
     Extraction from load_config for testability and clarity.
@@ -35,9 +42,21 @@ def select_api_version(deployment: str, api_version_override: Optional[str]) -> 
         return DEFAULT_O_MODELS_API_VERSION, False
     return DEFAULT_STANDARD_API_VERSION, False
 
+
 class AzureOpenAIConfig:
-    def __init__(self, endpoint: str, api_key: str, deployment: str, api_version: str, is_override: bool,
-                 embedding_endpoint: str, embedding_model: str, embedding_deployment: str, embedding_api_version: str, embedding_api_key: str):
+    def __init__(
+        self,
+        endpoint: str,
+        api_key: str,
+        deployment: str,
+        api_version: str,
+        is_override: bool,
+        embedding_endpoint: str,
+        embedding_model: str,
+        embedding_deployment: str,
+        embedding_api_version: str,
+        embedding_api_key: str,
+    ):
         self.endpoint = endpoint
         self.api_key = api_key
         self.deployment = deployment
@@ -53,11 +72,15 @@ class AzureOpenAIConfig:
         return f"{self.endpoint}/openai/deployments/{self.deployment}"
 
     def chat_completions_url(self) -> str:
-        print(f"[debug:] Chat completions URL: {self.base_url()}/chat/completions?api-version={self.api_version}")
+        print(
+            f"[debug:] Chat completions URL: {self.base_url()}/chat/completions?api-version={self.api_version}"
+        )
         return f"{self.base_url()}/chat/completions?api-version={self.api_version}"
+
 
 # Global model override for web interface model selection
 _model_override: str | None = None
+
 
 def set_model_override(model: str | None) -> None:
     """Set a global model override for the current request."""
@@ -66,16 +89,20 @@ def set_model_override(model: str | None) -> None:
     if model:
         print(f"[debug:] Model override set to: {model}")
 
+
 def clear_model_override() -> None:
     """Clear the global model override."""
     global _model_override
     _model_override = None
 
+
 def load_config() -> AzureOpenAIConfig | None:
     endpoint = os.environ.get("AZURE_OPENAI_ENDPOINT")
     print(f"[debug:] Loaded AZURE_OPENAI_ENDPOINT: {endpoint}")
     api_key = os.environ.get("AZURE_OPENAI_KEY")
-    deployment = _model_override or os.environ.get("AZURE_OPENAI_DEPLOYMENT", "gpt-35-turbo")
+    deployment = _model_override or os.environ.get(
+        "AZURE_OPENAI_DEPLOYMENT", "gpt-35-turbo"
+    )
     if _model_override:
         print(f"[debug:] Using model override: {deployment}")
     else:
@@ -91,7 +118,9 @@ def load_config() -> AzureOpenAIConfig | None:
     embedding_deployment = os.environ.get("AZURE_OPENAI_EMBEDDING_DEPLOYMENT")
     print(f"[debug:] Loaded AZURE_OPENAI_EMBEDDING_DEPLOYMENT: {embedding_deployment}")
     embedding_api_version = os.environ.get("AZURE_OPENAI_EMBEDDING_API_VERSION")
-    print(f"[debug:] Loaded AZURE_OPENAI_EMBEDDING_API_VERSION: {embedding_api_version}")
+    print(
+        f"[debug:] Loaded AZURE_OPENAI_EMBEDDING_API_VERSION: {embedding_api_version}"
+    )
     embedding_api_key = os.environ.get("AZURE_OPENAI_EMBEDDING_API_KEY")
 
     if not endpoint or not api_key:
@@ -100,15 +129,29 @@ def load_config() -> AzureOpenAIConfig | None:
 
     if not endpoint.startswith("http"):
         endpoint = f"https://{endpoint}"
-    endpoint = endpoint.rstrip('/')
+    endpoint = endpoint.rstrip("/")
 
     api_version, is_override = select_api_version(deployment, api_version_override)
     if is_override:
         print(f"[debug:] Using overridden API version: {api_version}")
     else:
-        print(f"[debug:] Selected API version: {api_version} (o-model={_is_o_model(deployment)})")
+        print(
+            f"[debug:] Selected API version: {api_version} (o-model={_is_o_model(deployment)})"
+        )
 
-    return AzureOpenAIConfig(endpoint, api_key, deployment, api_version, is_override, embedding_endpoint, embedding_model, embedding_deployment, embedding_api_version, embedding_api_key)
+    return AzureOpenAIConfig(
+        endpoint,
+        api_key,
+        deployment,
+        api_version,
+        is_override,
+        embedding_endpoint,
+        embedding_model,
+        embedding_deployment,
+        embedding_api_version,
+        embedding_api_key,
+    )
+
 
 def _is_o_model(deployment: str) -> bool:
     """Return True only for explicitly named o-model family deployments.
@@ -123,6 +166,7 @@ def _is_o_model(deployment: str) -> bool:
     d = deployment.lower()
     return d == "o1" or d == "o4" or d.startswith("o1-") or d.startswith("o4-")
 
+
 def _supports_max_tokens(deployment: str) -> bool:
     """Return False for models that don't support max_tokens parameter."""
     if not deployment:
@@ -130,6 +174,7 @@ def _supports_max_tokens(deployment: str) -> bool:
     d = deployment.lower()
     # gpt-5.2-chat and similar preview models don't support max_tokens
     return not (d.startswith("gpt-5") or "gpt-5.2" in d)
+
 
 def _supports_temperature(deployment: str) -> bool:
     """Return False for models that don't support custom temperature parameter."""
@@ -139,7 +184,17 @@ def _supports_temperature(deployment: str) -> bool:
     # gpt-5.2-chat and similar preview models only support default temperature (1)
     return not (d.startswith("gpt-5") or "gpt-5.2" in d)
 
-def build_payload(messages: list[Dict[str, str]], *, is_o_model: bool, max_output_tokens: int = 500, temperature: float | None = 0.3, top_p: float | None = 0.9, supports_max_tokens: bool = True, supports_temperature: bool = True) -> Dict[str, Any]:
+
+def build_payload(
+    messages: list[Dict[str, str]],
+    *,
+    is_o_model: bool,
+    max_output_tokens: int = 500,
+    temperature: float | None = 0.3,
+    top_p: float | None = 0.9,
+    supports_max_tokens: bool = True,
+    supports_temperature: bool = True,
+) -> Dict[str, Any]:
     """Return a properly shaped payload for Azure OpenAI Chat Completions.
 
     For o-models (o1, o4 families) only user messages are supported and use max_completion_tokens.
@@ -150,15 +205,11 @@ def build_payload(messages: list[Dict[str, str]], *, is_o_model: bool, max_outpu
         # Combine messages into a single user message
         combined_content = "\n\n".join(m.get("content", "") for m in messages)
         return {
-            "messages": [
-                {"role": "user", "content": combined_content}
-            ],
-            "max_completion_tokens": max_output_tokens
+            "messages": [{"role": "user", "content": combined_content}],
+            "max_completion_tokens": max_output_tokens,
         }
     # Standard model
-    payload: Dict[str, Any] = {
-        "messages": messages
-    }
+    payload: Dict[str, Any] = {"messages": messages}
     # Only add max_tokens if the model supports it
     if supports_max_tokens:
         payload["max_tokens"] = max_output_tokens
@@ -170,26 +221,37 @@ def build_payload(messages: list[Dict[str, str]], *, is_o_model: bool, max_outpu
             payload["top_p"] = top_p
     return payload
 
+
 def mask_key(k: str | None) -> str:
     if not k:
         return ""
     return f"{k[:4]}***len={len(k)}"
 
+
 def debug_print_config(prefix: str, cfg: AzureOpenAIConfig):
     try:
         print(f"[{prefix}] Endpoint: {cfg.endpoint}")
         print(f"[{prefix}] Deployment: {cfg.deployment}")
-        print(f"[{prefix}] API Version: {cfg.api_version} (override={'YES' if cfg.is_override else 'NO'})")
-        print(f"[{prefix}] API Key Present: {'YES' if cfg.api_key else 'NO'} ({mask_key(cfg.api_key)})")
+        print(
+            f"[{prefix}] API Version: {cfg.api_version} (override={'YES' if cfg.is_override else 'NO'})"
+        )
+        print(
+            f"[{prefix}] API Key Present: {'YES' if cfg.api_key else 'NO'} ({mask_key(cfg.api_key)})"
+        )
         print(f"[{prefix}] Embedding Endpoint: {cfg.embedding_endpoint}")
         print(f"[{prefix}] Embedding Model: {cfg.embedding_model}")
         print(f"[{prefix}] Embedding Deployment: {cfg.embedding_deployment}")
         print(f"[{prefix}] Embedding API Version: {cfg.embedding_api_version}")
-        print(f"[{prefix}] Embedding API Key Present: {'YES' if cfg.embedding_api_key else 'NO'} ({mask_key(cfg.embedding_api_key)})")
+        print(
+            f"[{prefix}] Embedding API Key Present: {'YES' if cfg.embedding_api_key else 'NO'} ({mask_key(cfg.embedding_api_key)})"
+        )
     except Exception as e:
         print(f"[{prefix}] Failed to print config: {e}")
 
-def get_env_int(name: str, default: int, min_value: int | None = None, max_value: int | None = None) -> int:
+
+def get_env_int(
+    name: str, default: int, min_value: int | None = None, max_value: int | None = None
+) -> int:
     """Fetch an integer environment variable with validation and fallback."""
     raw = os.environ.get(name)
     if raw is None or raw.strip() == "":
@@ -204,19 +266,26 @@ def get_env_int(name: str, default: int, min_value: int | None = None, max_value
     except ValueError:
         return default
 
+
 # === Shared Chat Helper Layer (restored) ===
 
-def build_messages(system_prompt: str, user_prompt: str, *, is_o_model: bool) -> List[Dict[str, str]]:
+
+def build_messages(
+    system_prompt: str, user_prompt: str, *, is_o_model: bool
+) -> List[Dict[str, str]]:
     """Return message list formatted per model type."""
     if is_o_model:
-        print(f"[debug:] {{\"role\":\"user\", \"content\":\"{system_prompt}\n\n{user_prompt}\"}}")
+        print(
+            f'[debug:] {{"role":"user", "content":"{system_prompt}\n\n{user_prompt}"}}'
+        )
         return [{"role": "user", "content": f"{system_prompt}\n\n{user_prompt}"}]
-    print(f"[debug:] {{\"role\":\"system\", \"content\":\"{system_prompt}\"}}")
-    print(f"[debug:] {{\"role\":\"user\", \"content\":\"{user_prompt}\"}}")
+    print(f'[debug:] {{"role":"system", "content":"{system_prompt}"}}')
+    print(f'[debug:] {{"role":"user", "content":"{user_prompt}"}}')
     return [
         {"role": "system", "content": system_prompt},
-        {"role": "user", "content": user_prompt}
+        {"role": "user", "content": user_prompt},
     ]
+
 
 def build_chat_request(
     messages: List[Dict[str, str]],
@@ -232,19 +301,43 @@ def build_chat_request(
     Backwards compatible: if overrides not provided, env/defaults are used.
     """
     # Default increased from 500 -> 1000 to allow more reasoning/output without requiring env override.
-    env_max = get_env_int("AZURE_OPENAI_MAX_OUTPUT_TOKENS", 2000, min_value=50, max_value=4000)
+    env_max = get_env_int(
+        "AZURE_OPENAI_MAX_OUTPUT_TOKENS", 2000, min_value=50, max_value=4000
+    )
     out_tokens = max_tokens if max_tokens is not None else env_max
     supports_max_tokens = _supports_max_tokens(deployment)
     supports_temperature = _supports_temperature(deployment)
     if is_o_model:
-        return build_payload(messages, is_o_model=True, max_output_tokens=out_tokens, supports_max_tokens=supports_max_tokens, supports_temperature=supports_temperature)
+        return build_payload(
+            messages,
+            is_o_model=True,
+            max_output_tokens=out_tokens,
+            supports_max_tokens=supports_max_tokens,
+            supports_temperature=supports_temperature,
+        )
     base_temp_default = float(os.environ.get("AZURE_OPENAI_TRANSLATE_BASE_TEMP", "0.1"))
     eff_temp = base_temp_default if temperature is None else temperature
     eff_top_p = 0.9 if top_p is None else top_p
-    return build_payload(messages, is_o_model=False, max_output_tokens=out_tokens, temperature=eff_temp, top_p=eff_top_p, supports_max_tokens=supports_max_tokens, supports_temperature=supports_temperature)
+    return build_payload(
+        messages,
+        is_o_model=False,
+        max_output_tokens=out_tokens,
+        temperature=eff_temp,
+        top_p=eff_top_p,
+        supports_max_tokens=supports_max_tokens,
+        supports_temperature=supports_temperature,
+    )
 
 
-def chat_completion(cfg: AzureOpenAIConfig, payload: Dict[str, Any], *, max_retries: int = 3, base_delay: float = 1.0, timeout: int = 30, debug_prefix: str = "Chat") -> Tuple[Optional[str], Optional[str], Optional[Dict[str, Any]], Optional[str]]:
+def chat_completion(
+    cfg: AzureOpenAIConfig,
+    payload: Dict[str, Any],
+    *,
+    max_retries: int = 3,
+    base_delay: float = 1.0,
+    timeout: int = 30,
+    debug_prefix: str = "Chat",
+) -> Tuple[Optional[str], Optional[str], Optional[Dict[str, Any]], Optional[str]]:
     """Execute chat completion with retries.
 
     Returns (content, error_message, raw_json, finish_reason)
@@ -254,9 +347,11 @@ def chat_completion(cfg: AzureOpenAIConfig, payload: Dict[str, Any], *, max_retr
     headers = {"Content-Type": "application/json", "api-key": cfg.api_key}
     for attempt in range(max_retries):
         try:
-            resp = requests.post(url, headers=headers, data=json.dumps(payload), timeout=timeout)
+            resp = requests.post(
+                url, headers=headers, data=json.dumps(payload), timeout=timeout
+            )
             if resp.status_code == 429 and attempt < max_retries - 1:
-                delay = base_delay * (2 ** attempt)
+                delay = base_delay * (2**attempt)
                 print(f"[{debug_prefix}] 429 rate limit; retrying in {delay}s")
                 time.sleep(delay)
                 continue
@@ -265,21 +360,33 @@ def chat_completion(cfg: AzureOpenAIConfig, payload: Dict[str, Any], *, max_retr
             if resp.status_code == 404:
                 return None, f"Deployment not found (404): {cfg.deployment}", None, None
             if resp.status_code == 400:
-                print(f"[{debug_prefix}] 400 body snippet: {resp.text[:400] if hasattr(resp,'text') else ''}")
+                print(
+                    f"[{debug_prefix}] 400 body snippet: {resp.text[:400] if hasattr(resp,'text') else ''}"
+                )
             resp.raise_for_status()
             try:
                 data = resp.json()
             except json.JSONDecodeError:
                 return None, "Invalid JSON response", None, None
-            if 'error' in data:
-                return None, data['error'].get('message', 'Unknown API error'), data, None
-            if 'choices' not in data or not data['choices']:
+            if "error" in data:
+                return (
+                    None,
+                    data["error"].get("message", "Unknown API error"),
+                    data,
+                    None,
+                )
+            if "choices" not in data or not data["choices"]:
                 return None, "No choices returned", data, None
-            choice = data['choices'][0]
-            if choice.get('finish_reason') == 'content_filter':
-                return None, "Response filtered (content policy)", data, choice.get('finish_reason')
-            msg = choice.get('message', {})
-            content_field = msg.get('content')
+            choice = data["choices"][0]
+            if choice.get("finish_reason") == "content_filter":
+                return (
+                    None,
+                    "Response filtered (content policy)",
+                    data,
+                    choice.get("finish_reason"),
+                )
+            msg = choice.get("message", {})
+            content_field = msg.get("content")
             extracted_text = ""
             # Azure sometimes returns a list of content parts; handle string or list
             if isinstance(content_field, str):
@@ -292,35 +399,33 @@ def chat_completion(cfg: AzureOpenAIConfig, payload: Dict[str, Any], *, max_retr
                         if part.strip():
                             parts.append(part.strip())
                     elif isinstance(part, dict):
-                        txt = part.get('text') or part.get('content') or ''
+                        txt = part.get("text") or part.get("content") or ""
                         if isinstance(txt, str) and txt.strip():
                             parts.append(txt.strip())
                 extracted_text = "\n".join(p for p in parts if p)
             # Fallback: attempt to pull from alternative keys
             if not extracted_text:
-                alt = msg.get('alternate') or msg.get('response')
+                alt = msg.get("alternate") or msg.get("response")
                 if isinstance(alt, str):
                     extracted_text = alt
             if not extracted_text.strip():
                 # Extra fallback: sometimes Azure may put text at choice level (rare)
-                choice_level_text = choice.get('text') or choice.get('content')
+                choice_level_text = choice.get("text") or choice.get("content")
                 if isinstance(choice_level_text, str) and choice_level_text.strip():
                     extracted_text = choice_level_text.strip()
                 if not extracted_text.strip():
                     # Provide richer diagnostics (Suggestion B)
                     msg_keys = list(msg.keys())
                     choice_keys = list(choice.keys())
-                    finish = choice.get('finish_reason')
-                    usage = data.get('usage') if isinstance(data, dict) else None
+                    finish = choice.get("finish_reason")
+                    usage = data.get("usage") if isinstance(data, dict) else None
                     print(
                         f"[{debug_prefix}] Empty content debug: finish_reason={finish} attempts={attempt+1}/{max_retries} "
                         f"msg_keys={msg_keys} choice_keys={choice_keys} usage={usage} raw_message={msg} choice_obj={choice}"
                     )
-                    err_detail = (
-                        f"Empty completion content (finish_reason={finish} msg_keys={msg_keys} choice_keys={choice_keys})"
-                    )
+                    err_detail = f"Empty completion content (finish_reason={finish} msg_keys={msg_keys} choice_keys={choice_keys})"
                     return None, err_detail, data, finish
-            return extracted_text.strip(), None, data, choice.get('finish_reason')
+            return extracted_text.strip(), None, data, choice.get("finish_reason")
         except requests.exceptions.Timeout:
             if attempt < max_retries - 1:
                 delay = base_delay * (attempt + 1)
@@ -336,11 +441,13 @@ def chat_completion(cfg: AzureOpenAIConfig, payload: Dict[str, Any], *, max_retr
                 continue
             return None, "Connection error", None, None
         except requests.exceptions.HTTPError as e:
-            status = e.response.status_code if getattr(e, 'response', None) else 'Unknown'
-            snippet = ''
+            status = (
+                e.response.status_code if getattr(e, "response", None) else "Unknown"
+            )
+            snippet = ""
             try:
-                body = e.response.text if e.response is not None else ''
-                snippet = (body[:300] + '...') if len(body) > 300 else body
+                body = e.response.text if e.response is not None else ""
+                snippet = (body[:300] + "...") if len(body) > 300 else body
             except Exception:
                 pass
             return None, f"HTTP error {status}: {snippet}", None, None
@@ -348,15 +455,18 @@ def chat_completion(cfg: AzureOpenAIConfig, payload: Dict[str, Any], *, max_retr
             return None, f"Unexpected exception: {ex}", None, None
     return None, "Exceeded retries", None, None
 
+
 # ---------------------------------------------------------------------------
 # Normalization Utilities (Item 2)
 # ---------------------------------------------------------------------------
 _FENCE_RE = re.compile(r"```[a-zA-Z0-9]*\n|```", re.MULTILINE)
 
+
 def strip_code_fences(text: str) -> str:
     if not text:
         return text
     return _FENCE_RE.sub("", text).strip()
+
 
 def truncate_text(text: str, max_chars: int, suffix: str = "...TRUNCATED...") -> str:
     if max_chars <= 0:
@@ -364,6 +474,7 @@ def truncate_text(text: str, max_chars: int, suffix: str = "...TRUNCATED...") ->
     if len(text) <= max_chars:
         return text
     return text[:max_chars] + suffix
+
 
 def normalize_content(raw_text: str) -> str:
     """Normalize raw model content: strip code fences, collapse excessive blank lines and whitespace."""
@@ -376,6 +487,7 @@ def normalize_content(raw_text: str) -> str:
     cleaned_lines = [ln.rstrip() for ln in collapsed.splitlines()]
     final = "\n".join(cleaned_lines).strip()
     return final
+
 
 # ---------------------------------------------------------------------------
 # ChatResult + run_chat wrapper (Item 3)
@@ -391,11 +503,13 @@ class ChatResult:
     metadata: Dict[str, Any]
     usage: Dict[str, int] | None = None
 
+
 # ---------------------------------------------------------------------------
 # Unified JSON Logging Hook (Item 8)
 # ---------------------------------------------------------------------------
 def _sha256_short(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()[:16]
+
 
 def emit_chat_event(result: ChatResult, extra: Optional[Dict[str, Any]] = None) -> None:
     """Write a JSON line representing a chat invocation (if logging enabled).
@@ -409,7 +523,9 @@ def emit_chat_event(result: ChatResult, extra: Optional[Dict[str, Any]] = None) 
     if os.environ.get("AZURE_OPENAI_JSON_LOG", "0") != "1":
         return
     try:
-        log_path = os.environ.get("AZURE_OPENAI_JSON_LOG_PATH", os.path.join("logs", "chat_events.jsonl"))
+        log_path = os.environ.get(
+            "AZURE_OPENAI_JSON_LOG_PATH", os.path.join("logs", "chat_events.jsonl")
+        )
         os.makedirs(os.path.dirname(log_path), exist_ok=True)
         full_allowed = os.environ.get("AZURE_OPENAI_LOG_FULL", "0") == "1"
         content_preview = None
@@ -446,6 +562,7 @@ def emit_chat_event(result: ChatResult, extra: Optional[Dict[str, Any]] = None) 
     except Exception as log_exc:
         print(f"[emit_chat_event] Logging failed: {log_exc}")
 
+
 # ---------------------------------------------------------------------------
 # Error Codes (Item 5)
 # ---------------------------------------------------------------------------
@@ -459,6 +576,7 @@ class ErrorCodes:
     CONNECTION = "connection_error"
     HTTP = "http_error"
     GENERIC = "generic_error"
+
 
 def classify_error(err: Optional[str]) -> Optional[str]:
     if not err:
@@ -482,10 +600,13 @@ def classify_error(err: Optional[str]) -> Optional[str]:
         return ErrorCodes.HTTP
     return ErrorCodes.GENERIC
 
+
 # ---------------------------------------------------------------------------
 # Token Escalation (Item 4)
 # ---------------------------------------------------------------------------
-def maybe_escalate_tokens(finish_reason: Optional[str], current_tokens: int, ceiling: int) -> Optional[int]:
+def maybe_escalate_tokens(
+    finish_reason: Optional[str], current_tokens: int, ceiling: int
+) -> Optional[int]:
     """If finish reason indicates truncation and we have headroom, escalate token budget.
     Strategy: increase by 50% up to ceiling (at least +50 tokens if small).
     """
@@ -498,6 +619,7 @@ def maybe_escalate_tokens(finish_reason: Optional[str], current_tokens: int, cei
     if new_tokens <= current_tokens:
         return None
     return new_tokens
+
 
 def run_chat(
     *,
@@ -526,16 +648,31 @@ def run_chat(
     """
     cfg = cfg or load_config()
     if not cfg:
-        return ChatResult(content=None, finish_reason=None, error="Missing configuration", raw=None, attempts=0, escalated=False, metadata={"purpose": purpose})
+        return ChatResult(
+            content=None,
+            finish_reason=None,
+            error="Missing configuration",
+            raw=None,
+            attempts=0,
+            escalated=False,
+            metadata={"purpose": purpose},
+        )
 
     deployment = cfg.deployment
     is_o = _is_o_model(deployment)
     initial_tokens = max_tokens
     if initial_tokens is None:
         # Mirror logic inside build_chat_request (updated default 1000)
-        initial_tokens = get_env_int("AZURE_OPENAI_MAX_OUTPUT_TOKENS", 1000, min_value=50, max_value=4000)
+        initial_tokens = get_env_int(
+            "AZURE_OPENAI_MAX_OUTPUT_TOKENS", 1000, min_value=50, max_value=4000
+        )
     # Escalation ceiling default raised from 1200 -> 2000 to permit one or two larger expansions.
-    ceiling = escalation_ceiling or get_env_int("AZURE_OPENAI_ESCALATION_CEILING", 2000, min_value=initial_tokens, max_value=4000)
+    ceiling = escalation_ceiling or get_env_int(
+        "AZURE_OPENAI_ESCALATION_CEILING",
+        2000,
+        min_value=initial_tokens,
+        max_value=4000,
+    )
 
     attempts = 0
     escalated = False
@@ -548,8 +685,16 @@ def run_chat(
     finish_reason: Optional[str] = None
 
     base_temp_env = float(os.environ.get("AZURE_OPENAI_TRANSLATE_BASE_TEMP", "0.1"))
-    increment = temp_increment if temp_increment is not None else float(os.environ.get("AZURE_OPENAI_TEMP_INCREMENT", "0.05"))
-    max_temp_cap = max_temperature if max_temperature is not None else float(os.environ.get("AZURE_OPENAI_TEMP_MAX", "0.6"))
+    increment = (
+        temp_increment
+        if temp_increment is not None
+        else float(os.environ.get("AZURE_OPENAI_TEMP_INCREMENT", "0.05"))
+    )
+    max_temp_cap = (
+        max_temperature
+        if max_temperature is not None
+        else float(os.environ.get("AZURE_OPENAI_TEMP_MAX", "0.6"))
+    )
 
     current_temperature = temperature if temperature is not None else base_temp_env
 
@@ -563,7 +708,9 @@ def run_chat(
             temperature=current_temperature,
             top_p=top_p,
         )
-        c, e, r, fr = chat_completion(cfg, payload, debug_prefix=dbg + ("-Escalated" if loop == 1 else ""))
+        c, e, r, fr = chat_completion(
+            cfg, payload, debug_prefix=dbg + ("-Escalated" if loop == 1 else "")
+        )
         attempts += 1
         content, error_msg, raw, finish_reason = c, e, r, fr
         if error_msg:
@@ -571,10 +718,14 @@ def run_chat(
         if allow_escalation:
             new_tokens = maybe_escalate_tokens(finish_reason, current_tokens, ceiling)
             if new_tokens and not escalated:
-                print(f"[run_chat] Escalating max_tokens {current_tokens} -> {new_tokens} (finish_reason=length)")
+                print(
+                    f"[run_chat] Escalating max_tokens {current_tokens} -> {new_tokens} (finish_reason=length)"
+                )
                 current_tokens = new_tokens
                 if adapt_temperature:
-                    current_temperature = min(current_temperature + increment, max_temp_cap)
+                    current_temperature = min(
+                        current_temperature + increment, max_temp_cap
+                    )
                 escalated = True
                 continue  # perform escalated retry
         break  # normal exit
@@ -583,7 +734,7 @@ def run_chat(
 
     usage = None
     if raw and isinstance(raw, dict):
-        usage_raw = raw.get('usage') or {}
+        usage_raw = raw.get("usage") or {}
         if isinstance(usage_raw, dict):
             usage = {
                 k: int(v) for k, v in usage_raw.items() if isinstance(v, (int, float))
@@ -610,6 +761,7 @@ def run_chat(
         usage=usage,
     )
 
+
 # ---------------------------------------------------------------------------
 # Secret Masking (centralized)
 # ---------------------------------------------------------------------------
@@ -620,6 +772,7 @@ _SECRET_PATTERNS = [
     re.compile(r"(?i)api[_-]?key[:=]\s*[A-Za-z0-9-_]{10,}"),
 ]
 
+
 def mask_secrets(text: str) -> str:
     if not text:
         return text
@@ -627,6 +780,7 @@ def mask_secrets(text: str) -> str:
     for pat in _SECRET_PATTERNS:
         masked = pat.sub("[REDACTED]", masked)
     return masked
+
 
 # ---------------------------------------------------------------------------
 # Facade: OpenAIClient
@@ -638,6 +792,7 @@ class OpenAIClient:
         client = OpenAIClient()
         res = client.chat(system_prompt, user_prompt, purpose="translate")
     """
+
     def __init__(self, cfg: AzureOpenAIConfig | None = None):
         self.cfg = cfg or load_config()
         if not self.cfg:
@@ -682,15 +837,32 @@ class OpenAIClient:
 
     # Convenience wrappers
     def translate(self, prompt: str, question: str, **kwargs) -> ChatResult:
-        return self.chat(system_prompt=prompt, user_prompt=f"Question: {question}\nReturn ONLY the KQL query.", purpose="translate", **kwargs)
+        return self.chat(
+            system_prompt=prompt,
+            user_prompt=f"Question: {question}\nReturn ONLY the KQL query.",
+            purpose="translate",
+            **kwargs,
+        )
 
     def explain(self, system_prompt: str, summary: str, **kwargs) -> ChatResult:
-        return self.chat(system_prompt=system_prompt, user_prompt=summary, purpose="explain", **kwargs)
+        return self.chat(
+            system_prompt=system_prompt,
+            user_prompt=summary,
+            purpose="explain",
+            **kwargs,
+        )
+
 
 # ---------------------------------------------------------------------------
 # Embeddings Helper (Azure + fallback)
 # ---------------------------------------------------------------------------
-def run_embeddings(texts: List[str], *, cfg: AzureOpenAIConfig | None = None, model: Optional[str] = None, timeout: int = 30) -> Tuple[Optional[List[List[float]]], Optional[str]]:
+def run_embeddings(
+    texts: List[str],
+    *,
+    cfg: AzureOpenAIConfig | None = None,
+    model: Optional[str] = None,
+    timeout: int = 30,
+) -> Tuple[Optional[List[List[float]]], Optional[str]]:
     """Obtain embedding vectors from Azure OpenAI for the provided list of texts.
 
     Returns (vectors, error). Each vector is L2-normalized. On any failure returns (None, error_message).
@@ -717,46 +889,61 @@ def run_embeddings(texts: List[str], *, cfg: AzureOpenAIConfig | None = None, mo
         )
 
     # Check if embedding configuration is complete
-    if not cfg.embedding_endpoint or not embedding_deployment or not cfg.embedding_api_version:
-        return None, "Missing embedding configuration (AZURE_OPENAI_EMBEDDING_ENDPOINT, AZURE_OPENAI_EMBEDDING_DEPLOYMENT, or AZURE_OPENAI_EMBEDDING_API_VERSION)"
-    
+    if (
+        not cfg.embedding_endpoint
+        or not embedding_deployment
+        or not cfg.embedding_api_version
+    ):
+        return (
+            None,
+            "Missing embedding configuration (AZURE_OPENAI_EMBEDDING_ENDPOINT, AZURE_OPENAI_EMBEDDING_DEPLOYMENT, or AZURE_OPENAI_EMBEDDING_API_VERSION)",
+        )
+
     # Optional explicit embedding model override (Azure sometimes requires 'model' field for certain API versions)
     explicit_model = cfg.embedding_model or model
     embedding_api_version = cfg.embedding_api_version
-    embeddings_base_endpoint = cfg.embedding_endpoint.rstrip('/')
+    embeddings_base_endpoint = cfg.embedding_endpoint.rstrip("/")
     url = f"{embeddings_base_endpoint}/openai/deployments/{embedding_deployment}/embeddings?api-version={embedding_api_version}"
     headers = {"Content-Type": "application/json", "api-key": cfg.embedding_api_key}
     payload: Dict[str, Any] = {"input": texts}
     if explicit_model:
         payload["model"] = explicit_model
     try:
-        resp = requests.post(url, headers=headers, data=json.dumps(payload), timeout=timeout)
+        resp = requests.post(
+            url, headers=headers, data=json.dumps(payload), timeout=timeout
+        )
         if resp.status_code == 401:
             return None, "Authentication failed (401) for embeddings"
         if resp.status_code == 404:
-            return None, f"Embeddings deployment not found (404): {embedding_deployment}"
+            return (
+                None,
+                f"Embeddings deployment not found (404): {embedding_deployment}",
+            )
         if resp.status_code == 429:
             return None, "Rate limited (429) for embeddings"
         if resp.status_code >= 400:
-            snippet = resp.text[:300] if hasattr(resp, 'text') else ''
+            snippet = resp.text[:300] if hasattr(resp, "text") else ""
             return None, f"HTTP {resp.status_code}: {snippet}"
         data = resp.json()
-        if 'error' in data:
-            raw_err = data['error'].get('message', 'Unknown embeddings error')
+        if "error" in data:
+            raw_err = data["error"].get("message", "Unknown embeddings error")
             # Augment common OperationNotSupported with guidance
-            if 'OperationNotSupported' in raw_err or 'does not work with the specified model' in raw_err:
+            if (
+                "OperationNotSupported" in raw_err
+                or "does not work with the specified model" in raw_err
+            ):
                 raw_err += (
                     " | Hint: Ensure AZURE_OPENAI_EMBED_DEPLOYMENT references a dedicated embedding model "
                     "(e.g. text-embedding-3-small, text-embedding-3-large, text-embedding-ada-002)."
                 )
             return None, raw_err
-        items = data.get('data') or []
+        items = data.get("data") or []
         vectors: List[List[float]] = []
         for item in items:
-            vec = item.get('embedding') or []
+            vec = item.get("embedding") or []
             if not isinstance(vec, list):
                 continue
-            norm = (sum(v*v for v in vec) ** 0.5) or 1.0
+            norm = (sum(v * v for v in vec) ** 0.5) or 1.0
             vectors.append([v / norm for v in vec])
         if not vectors:
             return None, "No embedding vectors returned"
@@ -765,6 +952,7 @@ def run_embeddings(texts: List[str], *, cfg: AzureOpenAIConfig | None = None, mo
         return None, "Embeddings request timed out"
     except Exception as e:
         return None, f"Embeddings unexpected error: {e}"
+
 
 def create_embeddings(texts: List[str]) -> Optional[List[List[float]]]:
     """Return Azure embeddings for provided texts (Azure-only).
@@ -777,7 +965,9 @@ def create_embeddings(texts: List[str]) -> Optional[List[List[float]]]:
         return None
     vectors, err = run_embeddings(texts, cfg=azure_cfg)
     if vectors is not None:
-        print(f"[embeddings] provider=azure deployment={azure_cfg.embedding_deployment} count={len(vectors)}")
+        print(
+            f"[embeddings] provider=azure deployment={azure_cfg.embedding_deployment} count={len(vectors)}"
+        )
         return vectors
     print(f"[embeddings] azure_failed error='{err}' (Azure-only, no fallback)")
     return None

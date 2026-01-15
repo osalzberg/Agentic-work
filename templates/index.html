@@ -5110,26 +5110,39 @@ async function processQuestionWithRetry(question) {
 
                 updateBatchProgress(95, 'Building Excel file...');
 
-                // Now send all results to backend to build Excel
-                // Record client start time (ms since epoch) and measure locally (wall-clock)
-                const clientStart = Date.now();
-                const buildResponse = await fetch('/api/batch-test/build', {
+                // Instead of running prompts client-side, send prompts to server for orchestration
+                const promptsPayload = testCases.map((tc, idx) => ({ id: idx, prompt: tc.prompt, expected_query: tc.expected_query }));
+                updateBatchProgress(50, 'Running prompts on server...');
+
+                // Run prompts server-side
+                const runResp = await fetch('/api/batch-run', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        filename: batchFileName,
-                        results: results,
-                        input_file_type: inputFileType
-                    })
+                    body: JSON.stringify({ prompts: promptsPayload, execute: true, stop_on_critical_error: false })
+                });
+                const runData = await runResp.json();
+                if (!runData.success) {
+                    updateBatchProgress(0, 'Server-side run failed');
+                    throw new Error(runData.error || 'Server batch-run failed');
+                }
+
+                const serverResults = runData.results || [];
+                updateBatchProgress(85, 'Building Excel file on server...');
+
+                // Now ask server to build the excel/json artifacts from server results
+                const clientStart = Date.now();
+                const buildResponse = await fetch('/api/batch-report/build', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ filename: batchFileName, results: serverResults, input_file_type: inputFileType })
                 });
 
                 const buildData = await buildResponse.json();
-                // Measure client-side elapsed time (wall-clock) from request start to response parsing
                 const clientElapsedSec = Math.round((Date.now() - clientStart) / 1000);
 
-                    if (buildData.success) {
+                if (buildData.success) {
                     updateBatchProgress(100, 'Complete!');
-                    
+
                     // Store results for download
                     batchResultsData = {
                         fileData: buildData.file_data,
