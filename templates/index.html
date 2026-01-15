@@ -5518,6 +5518,35 @@ async function processQuestionWithRetry(question) {
         }
 
     </script>
+
+    <!-- CACHE OVERRIDE: Force setup section to be visible even if cached version has display:none -->
+    <script>
+    (function() {
+        // Run immediately and also on DOMContentLoaded to ensure it works
+        function forceSetupVisible() {
+            const setupSection = document.querySelector('.setup-section');
+            if (setupSection) {
+                // Remove any inline style that might hide it
+                if (setupSection.style.display === 'none') {
+                    setupSection.style.display = '';
+                    console.log('✓ Setup section visibility forced by cache override script');
+                }
+                // Also ensure it's visible via direct style
+                setupSection.style.display = 'block';
+            }
+        }
+        
+        // Try immediately
+        forceSetupVisible();
+        
+        // And on DOMContentLoaded
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', forceSetupVisible);
+        } else {
+            forceSetupVisible();
+        }
+    })();
+    </script>
 </body>
 </html>
 
