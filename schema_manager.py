@@ -339,7 +339,7 @@ class SchemaManager:
             return []
         try:
             client = LogsQueryClient(_azure_credential)
-            # Use union with summarize - this only needs to see table names, not scan all data
+            # Use union with summarize - this needs to scan data to find tables
             query = (
                 "union withsource=TableName * "
                 "| summarize count() by TableName "
@@ -347,9 +347,14 @@ class SchemaManager:
                 "| sort by TableName asc"
             )
             t0 = time.time()
-            print(f"[SchemaManager] Union enumeration start workspace={workspace_id} timespan_days=1")
-            # Use 1 day timespan - enough to find tables with recent data
-            resp = client.query_workspace(workspace_id=workspace_id, query=query, timespan=timedelta(days=1), server_timeout=90)
+            print(f"[SchemaManager] Union enumeration start workspace={workspace_id} timespan_days=30")
+            # Use 30 days to ensure we find tables - with server timeout to prevent hanging
+            resp = client.query_workspace(
+                workspace_id=workspace_id, 
+                query=query, 
+                timespan=timedelta(days=30),
+                server_timeout=120  # 2 minute server timeout
+            )
             tables: list[Dict[str, Any]] = []
             if hasattr(resp, "tables") and resp.tables:
                 first = resp.tables[0]
