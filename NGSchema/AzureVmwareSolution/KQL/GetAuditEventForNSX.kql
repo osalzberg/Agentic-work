@@ -1,3 +1,0 @@
-AVSSyslog
-| where Message has "nsx" and Message has "event"
-| count

@@ -1,4 +1,0 @@
-AZFWFlowTrace
-| where Flag == "INVALID"
-| order by TimeGenerated desc
-| take 100

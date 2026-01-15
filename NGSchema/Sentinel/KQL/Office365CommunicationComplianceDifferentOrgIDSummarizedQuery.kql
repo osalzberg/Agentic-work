@@ -1,3 +1,0 @@
-CommunicationComplianceActivity
-| where OrganizationId != "<The GUID for your organization's Office 365 tenant>"
-| summarize count() by UserId, ResultStatus

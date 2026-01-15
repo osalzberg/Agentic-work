@@ -1,7 +1,0 @@
-ACSEmailSendMailOperational
-| summarize TotalMessageCount = dcount(CorrelationId),
-            TotalSize = sum(Size),
-            AvgSizePerMessage = avg(Size),
-            AvgRecipientsPerMessage = avg(UniqueRecipientsCount),
-            AvgAttachmentsPerMessage = avg(AttachmentsCount),
-            SizeAvg = avg(Size) 

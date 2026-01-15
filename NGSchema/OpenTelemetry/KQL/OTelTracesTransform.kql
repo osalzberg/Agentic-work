@@ -1,3 +1,0 @@
-source
-| extend TimeGenerated = now()
-| project TimeGenerated

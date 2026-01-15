@@ -1,2 +1,0 @@
-AzureAttestationDiagnostics
-| summarize count() by CallerIpAddress, tostring(Identity.callerAadUPN)

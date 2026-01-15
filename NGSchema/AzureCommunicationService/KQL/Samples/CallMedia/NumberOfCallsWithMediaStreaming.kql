@@ -1,3 +1,0 @@
-ACSCallAutomationStreamingUsage 
-    | where StreamingModality contains "AudioStreaming" 
-    | summarize NumCallsWithMediaStreamingActive = dcount(CallConnectionId) 

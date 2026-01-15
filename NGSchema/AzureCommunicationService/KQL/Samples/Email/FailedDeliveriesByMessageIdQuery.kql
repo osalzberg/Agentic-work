@@ -1,4 +1,0 @@
-ACSEmailStatusUpdateOperational
-| where isempty(RecipientId) 
-| where DeliveryStatus != "OutForDelivery"
-| limit 100

@@ -1,4 +1,0 @@
-union isfuzzy=true
-_ASim_FileEventBuiltIn(pack= pack),
-ASim_FileEventSolutions(pack= pack),
-ASim_FileEventCustom(pack= pack)

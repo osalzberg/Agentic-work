@@ -1,3 +1,0 @@
-AVSSyslog
-| where Message has "vmremovedevent"
-| take 100

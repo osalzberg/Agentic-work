@@ -1,9 +1,0 @@
-source
-| project 
-    TimeGenerated = todatetime(["time"]),
-    OperationName = operationName,
-    CorrelationId = correlationId,
-    Message = resultDescription,
-    LogLevel = level,
-    Location = location,
-    Properties = properties

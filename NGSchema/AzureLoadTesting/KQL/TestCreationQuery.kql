@@ -1,4 +1,0 @@
-AzureLoadTestingOperation
-| where OperationId == "Test_CreateOrUpdateTest"
-| where HttpStatusCode == 201
-| summarize count() by _ResourceId

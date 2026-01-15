@@ -1,3 +1,0 @@
-AFDAccessLog 
-| summarize dcount(ClientIp) by bin(TimeGenerated, 1h) 
-| render timechart 
