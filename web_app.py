@@ -2075,78 +2075,19 @@ def batch_test_parse():
         }), 400
     
     try:
-        import pandas as pd
-        
-        # Read file based on extension
-        if file.filename.endswith('.csv'):
-            # Try flexible CSV parsing to handle mixed delimiters
-            try:
-                df = pd.read_csv(file)
-            except Exception:
-                # Reset file pointer and try with flexible parsing
-                file.seek(0)
-                try:
-                    df = pd.read_csv(file, sep=None, engine='python')
-                except Exception:
-                    # Last resort: try with explicit quoting and skip bad lines
-                    file.seek(0)
-                    df = pd.read_csv(file, quotechar='"', escapechar='\\', on_bad_lines='skip')
-            # Ensure proper index and clean column names
-            df = df.reset_index(drop=True)
-            df.columns = df.columns.str.strip()
-            
-            # Map common column name variations
-            col_map = {}
-            for col in df.columns:
-                col_lower = col.lower()
-                if col_lower in ['question', 'nl', 'natural language', 'ask']:
-                    col_map[col] = 'Prompt'
-                elif col_lower in ['query', 'kql', 'expected', 'expected query', 'expected_query']:
-                    col_map[col] = 'Expected Query'
-            if col_map:
-                df = df.rename(columns=col_map)
-        else:
-            df = pd.read_excel(file)
-        
-        # Debug: Log actual columns and first row
-        print(f"[DEBUG parse] Columns after mapping: {list(df.columns)}")
-        if len(df) > 0:
-            print(f"[DEBUG parse] First row Prompt: {df['Prompt'].iloc[0] if 'Prompt' in df.columns else 'N/A'}")
-            for col in df.columns:
-                print(f"[DEBUG parse] First row [{col}]: {df[col].iloc[0]}")
-        
-        # Validate columns
-        if 'Prompt' not in df.columns:
-            return jsonify({
-                'success': False,
-                'error': 'File must have a "Prompt" column'
-            }), 400
-        
-        # Extract prompts and expected queries
-        prompts = df['Prompt'].fillna('').astype(str).tolist()
-        
-        # Also extract expected queries if available
-        test_cases = []
-        has_expected = 'Expected Query' in df.columns or 'Query' in df.columns
-        expected_col = 'Expected Query' if 'Expected Query' in df.columns else ('Query' if 'Query' in df.columns else None)
-        
-        for idx in range(len(df)):
-            test_case = {
-                'prompt': prompts[idx],
-                'expected_query': df[expected_col].iloc[idx] if expected_col and pd.notna(df[expected_col].iloc[idx]) else None
-            }
-            test_cases.append(test_case)
-        
+        from utils.file_parser import parse_prompts_from_file
+
+        prompts, test_cases, df = parse_prompts_from_file(file)
+
         return jsonify({
             'success': True,
             'prompts': prompts,
             'test_cases': test_cases
         })
-        
     except Exception as e:
         import traceback
         error_details = traceback.format_exc()
-        print(f"[BatchParse] Error parsing Excel file: {error_details}")
+        print(f"[BatchParse] Error parsing file: {error_details}")
         return jsonify({
             'success': False,
             'error': f'Error parsing file: {str(e)}'
@@ -2195,25 +2136,62 @@ def batch_test_build():
             ['API Version', api_version],
             ['System Prompt', system_prompt],
             ['Timestamp', datetime.now().strftime('%Y-%m-%d %H:%M:%S')],
-            [''],
-            ['SUMMARY', ''],
-            ['Total', total_count],
-            ['Successful', success_count],
-            ['Failed', failed_count],
-            ['Wrong Query Generated', wrong_query_count],
-            ['']
         ]
+
+        # The server will not attempt to measure end-to-end batch elapsed time. Callers measure wall-clock time.
         
         # Create DataFrame
         rows = []
+
+        # First pass: collect union of all execution-stat keys across results for gen and exp
+        gen_keys = set()
+        exp_keys = set()
+        for rr in results:
+            gen = rr.get('gen_statistics') or rr.get('execution_statistics_gen') or {}
+            exp = rr.get('exp_statistics') or rr.get('execution_statistics_exp') or {}
+            if isinstance(gen, dict):
+                for k in gen.keys():
+                    gen_keys.add(k)
+            if isinstance(exp, dict):
+                for k in exp.keys():
+                    exp_keys.add(k)
+
+        # Convert to stable lists for consistent column order
+        gen_keys = sorted(list(gen_keys))
+        exp_keys = sorted(list(exp_keys))
+
+        # Helper to safely extract stat values
+        def _stat_val(stats, key):
+            if not stats or not isinstance(stats, dict):
+                return None
+            return stats.get(key)
+
         for r in results:
+            # Pretty-print execution statistics for Excel cells
+            def _pretty_stats(obj):
+                import json as _json
+                try:
+                    if obj is None:
+                        return None
+                    # If it's already a string, return as-is
+                    if isinstance(obj, str):
+                        return obj
+                    return _json.dumps(obj, ensure_ascii=False)
+                except Exception:
+                    try:
+                        return str(obj)
+                    except Exception:
+                        return None
+
             row_data = {
                 'Prompt': r.get('prompt', ''),
                 'Expected Query': r.get('expected_query', ''),
                 'Generated Query': r.get('query', ''),
                 'Execution Success': r.get('execution_success', False),
-                'Expected Rows Count': r.get('expected_rows_count'),
-                'Returned Rows Count': r.get('returned_rows_count'),
+                    'Expected Rows Count': r.get('expected_rows_count') if r.get('expected_rows_count') is not None else None,
+                    'Returned Rows Count': r.get('returned_rows_count') if r.get('returned_rows_count') is not None else None,
+                'Execution Statistics (gen)': _pretty_stats(r.get('gen_statistics')),
+                'Execution Statistics (exp)': _pretty_stats(r.get('exp_statistics')),
                 'Summary': r.get('reason', '')
             }
             
@@ -2284,7 +2262,46 @@ def batch_test_build():
                 row_data['Schema Match Score'] = None
                 row_data['Rows Match Score'] = None
                 row_data['Query Similarity Score'] = None
-            
+            # Ensure expected/returned row count columns exist even if missing from score
+            if 'Expected Rows Count' not in row_data:
+                row_data['Expected Rows Count'] = r.get('expected_rows_count') if r.get('expected_rows_count') is not None else None
+            if 'Returned Rows Count' not in row_data:
+                row_data['Returned Rows Count'] = r.get('returned_rows_count') if r.get('returned_rows_count') is not None else None
+            if 'Execution Statistics (gen)' not in row_data:
+                row_data['Execution Statistics (gen)'] = r.get('gen_statistics')
+            if 'Execution Statistics (exp)' not in row_data:
+                row_data['Execution Statistics (exp)'] = r.get('exp_statistics')
+            # compute zero-rows warning (results_match == 1.0 but returned rows == 0 or None)
+            zero_rows_warning = False
+            try:
+                rs = None
+                if r.get('score') and isinstance(r.get('score'), dict):
+                    rs = r.get('score').get('results_match')
+                    # nested canonical
+                    if rs is None:
+                        comps = r.get('score').get('components', {}) or {}
+                        rm = comps.get('results_match') if isinstance(comps, dict) else None
+                        if isinstance(rm, dict):
+                            rs = rm.get('score')
+                if rs is not None:
+                    try:
+                        if float(rs) >= 1.0 and (r.get('returned_rows_count') in (None, 0)):
+                            zero_rows_warning = True
+                    except Exception:
+                        zero_rows_warning = False
+            except Exception:
+                zero_rows_warning = False
+
+            row_data['Zero Rows Warning'] = zero_rows_warning
+
+            # Promote dynamic stat keys for gen and exp
+            gen_stats = r.get('gen_statistics') or r.get('execution_statistics_gen') or {}
+            exp_stats = r.get('exp_statistics') or r.get('execution_statistics_exp') or {}
+            for k in gen_keys:
+                row_data[f'gen_{k}'] = _stat_val(gen_stats, k)
+            for k in exp_keys:
+                row_data[f'exp_{k}'] = _stat_val(exp_stats, k)
+
             rows.append(row_data)
         
         df = pd.DataFrame(rows)
@@ -2326,6 +2343,8 @@ def batch_test_build():
                 return [_strip_reasoning(i) for i in obj]
             return obj
 
+        # NOTE: client-side elapsed is measured by the caller (CLI or browser).
+        # The server does not include client-measured elapsed time in exported metadata.
         json_data = {
             'metadata': {
                 'model': model_deployment,
@@ -2336,7 +2355,8 @@ def batch_test_build():
                     'total': total_count,
                     'successful': success_count,
                     'failed': failed_count,
-                    'wrong_query': wrong_query_count
+                    'wrong_query': wrong_query_count,
+                    'total_returned_rows': sum([r.get('returned_rows_count') or 0 for r in results])
                 }
             },
             'results': []
@@ -2429,6 +2449,27 @@ def batch_test_build():
             sanitized_score['query_similarity'] = round(float(qsim), 3)
             sanitized_score['results_match'] = round(float(rmatch), 3)
 
+            # compute zero_rows_warning for JSON export as well
+            zero_rows_warning = False
+            try:
+                rs_val = None
+                if 'results_match' in (r.get('score') or {}):
+                    rs_val = (r.get('score') or {}).get('results_match')
+                else:
+                    # try nested
+                    comps = (r.get('score') or {}).get('components') or {}
+                    rm = comps.get('results_match') if isinstance(comps, dict) else None
+                    if isinstance(rm, dict):
+                        rs_val = rm.get('score')
+                if rs_val is not None:
+                    try:
+                        if float(rs_val) >= 1.0 and (r.get('returned_rows_count') in (None, 0)):
+                            zero_rows_warning = True
+                    except Exception:
+                        zero_rows_warning = False
+            except Exception:
+                zero_rows_warning = False
+
             json_data['results'].append({
                 'prompt': r.get('prompt', ''),
                 'expected_query': r.get('expected_query', ''),
@@ -2436,8 +2477,11 @@ def batch_test_build():
                 'execution_success': r.get('execution_success', False),
                 'expected_rows_count': r.get('expected_rows_count'),
                 'returned_rows_count': r.get('returned_rows_count'),
+                'execution_statistics_gen': r.get('gen_statistics'),
+                'execution_statistics_exp': r.get('exp_statistics'),
                 'summary': r.get('reason', ''),
-                'score': sanitized_score
+                'score': sanitized_score,
+                'zero_rows_warning': zero_rows_warning
             })
         
         import json
@@ -2461,6 +2505,15 @@ def batch_test_build():
         except Exception:
             encoded_json = None
 
+        # Build a lightweight summary for immediate UI consumption
+        response_summary = {
+            'total': total_count,
+            'successful': success_count,
+            'failed': failed_count,
+            'wrong_query': wrong_query_count,
+            'total_returned_rows': sum([r.get('returned_rows_count') or 0 for r in results])
+        }
+
         return jsonify({
             'success': True,
             'file_data': encoded_file,
@@ -2473,7 +2526,9 @@ def batch_test_build():
                 'deployment': model_deployment,
                 'api_version': api_version
             },
-            'system_prompt': system_prompt
+            'system_prompt': system_prompt,
+            # Expose summary at top-level for the UI
+            'summary': response_summary
         })
         
     except ImportError:

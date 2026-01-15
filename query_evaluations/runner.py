@@ -414,7 +414,10 @@ def main() -> None:
                 "rows_match": {"identical": True},
                 "exec_error": None,
                 "has_results": True,
+                "expected_rows_count": None,
+                "returned_rows_count": None,
                 "gen_statistics": None,
+                "exp_statistics": None,
                 "llm_graded_similarity_score": 1.0,
             })
             continue
@@ -501,10 +504,14 @@ def main() -> None:
                 "schema_match": {"different_tables": True},
                 "rows_match": {"different_tables": True},
                 "exec_error": None,
-                "expected_rows_count": len(exp_rows) if isinstance(exp_rows, list) else None,
+                # expected rows are not available at this point (expected query not executed);
+                # avoid NameError by returning None
+                "expected_rows_count": None,
                 "returned_rows_count": len(exec_out.get("rows") or []),
                 "has_results": False,
                 "gen_statistics": None,
+                "gen_statistics": exec_out.get("statistics"),
+                "exp_statistics": None,
                 "llm_graded_similarity_score": 0.0,
             })
             continue
@@ -754,6 +761,7 @@ def main() -> None:
             "returned_rows_count": len(exec_out.get("rows") or []),
             "has_results": has_results,
             "gen_statistics": exec_out.get("statistics"),
+            "exp_statistics": exp_exec_out.get("statistics") if 'exp_exec_out' in locals() and isinstance(exp_exec_out, dict) else None,
             "llm_graded_similarity_score": llm_graded_similarity if isinstance(llm_graded_similarity, (int, float)) else None,
             "critical_issue": None,
         })
@@ -823,7 +831,6 @@ def main() -> None:
         "model": model_details,
         "dataset": args.dataset,
         "count": len(items),
-        "elapsed_sec": round(time.time() - start_ts, 3),
         "summary": summary,
         "results": results
     }
@@ -1014,11 +1021,11 @@ def _write_html_report(report: dict, output_path: str):
     <div class="header">
         <h1>KQL Evaluation Report</h1>
         <div class="metadata">
-            <strong>Model Deployment:</strong> {deployment}<br>
+            <strong>Model:</strong> {deployment}<br>
             <strong>API Version:</strong> {api_version}<br>
             <strong>Dataset:</strong> {dataset}<br>
             <strong>Total Tests:</strong> {count}<br>
-            <strong>Elapsed Time:</strong> {elapsed_sec}s
+            <!-- Elapsed time removed; callers measure wall-clock time -->
         </div>
         <div class="system-prompt">
             <strong>System Prompt:</strong><br>
@@ -1076,6 +1083,7 @@ def _write_html_report(report: dict, output_path: str):
                     <div class="summary-label">LLM Grade</div>
                     <div class="summary-value">{avg_llm_grade}</div>
                 </div>
+                <!-- Total Batch Time removed from server-generated report -->
             </div>
         </div>
     </div>
@@ -1095,6 +1103,7 @@ def _write_html_report(report: dict, output_path: str):
                 <th>Structural Similarity</th>
                 <th>Schema Match</th>
                 <th>Rows Match</th>
+                <th>Warnings</th>
                 <th>LLM Grade</th>
             </tr>
         </thead>
@@ -1105,7 +1114,8 @@ def _write_html_report(report: dict, output_path: str):
         system_prompt=_escape_html(report.get("model", {}).get("system_prompt", "")),
         dataset=report.get("dataset", ""),
         count=report.get("count", 0),
-        elapsed_sec=report.get("elapsed_sec", 0),
+        # elapsed_sec removed from report; leave placeholder as 0 if referenced elsewhere
+        elapsed_sec=0,
         valid_count=report.get("summary", {}).get("valid_queries", {}).get("count", 0),
         valid_rate=report.get("summary", {}).get("valid_queries", {}).get("rate", 0),
         invalid_count=report.get("summary", {}).get("invalid_queries", {}).get("count", 0),
@@ -1187,6 +1197,7 @@ def _write_html_report(report: dict, output_path: str):
                 <td class="metric-cell">{format_score(structural_sim)}</td>
                 <td class="metric-cell">{format_score(schema_match)}</td>
                 <td class="metric-cell">{format_score(rows_match)}</td>
+                <td class="metric-cell">{_escape_html(_generate_warning_html(result))}</td>
                 <td class="metric-cell">{format_score(llm_grade)}</td>
             </tr>
 """
@@ -1212,6 +1223,42 @@ def _escape_html(text):
             .replace('>', '&gt;')
             .replace('"', '&quot;')
             .replace("'", '&#39;'))
+
+
+def _generate_warning_html(result: dict) -> str:
+    """Generate HTML for warnings based on result diagnostics.
+
+    Currently warns when `results_match` is 1.0 but zero rows were returned.
+    """
+    try:
+        score = result.get('score') or {}
+        components = score.get('components', {}) if isinstance(score, dict) else {}
+        # Try canonical path first
+        rm_comp = components.get('results_match') if isinstance(components, dict) else None
+        rm_score = None
+        if isinstance(rm_comp, dict) and 'score' in rm_comp:
+            rm_score = float(rm_comp.get('score') or 0.0)
+        elif isinstance(score, dict) and 'results_match' in score:
+            try:
+                rm_score = float(score.get('results_match'))
+            except Exception:
+                rm_score = None
+
+        # Get returned rows (rows_match details may include actual_count)
+        rows_match = result.get('rows_match', {}) or {}
+        rows_details = rows_match.get('details', {}) if isinstance(rows_match, dict) else {}
+        actual_count = rows_details.get('actual_count') if isinstance(rows_details, dict) else None
+        # Fallback to returned_rows_count field
+        if actual_count is None:
+            actual_count = result.get('returned_rows_count')
+
+        warnings = []
+        if rm_score is not None and rm_score >= 1.0 and (actual_count is None or actual_count == 0):
+            warnings.append('<span style="color:#9a5700; font-weight:600;">⚠️ Perfect results match reported but zero rows returned</span>')
+
+        return ' '.join(warnings) if warnings else '-'
+    except Exception:
+        return '-'
 
 
 

@@ -45,61 +45,13 @@ async def process_file(
         reason_column: Name of column to write generation reason/status
     """
     
-    # Detect file type
-    is_csv = input_file.lower().endswith('.csv')
-    file_type = "CSV" if is_csv else "Excel"
-    
-    print(f"📂 Reading {file_type} file: {input_file}")
-    
-    # Read file (CSV or Excel)
+    # Use the shared parser to read prompts and expected queries
+    from utils.file_parser import parse_prompts_from_file
     try:
-        if is_csv:
-            # Try reading with header first - handle various CSV formats
-            try:
-                df = pd.read_csv(input_file)
-            except Exception as e:
-                # If standard comma delimiter fails, try with more flexible parsing
-                try:
-                    df = pd.read_csv(input_file, sep=None, engine='python')
-                except Exception:
-                    # Last resort: try with explicit quoting and escaping
-                    df = pd.read_csv(input_file, quotechar='"', escapechar='\\', on_bad_lines='skip')
-            
-            # Ensure we have a proper numeric index
-            df = df.reset_index(drop=True)
-            
-            # Normalize column names (strip whitespace, handle common variations)
-            df.columns = df.columns.str.strip()
-            
-            # Check if this looks like a headerless CSV (common structure: prompt, expected_query)
-            # Heuristic: if first row looks like data and column names are generic (0, 1, etc.)
-            if len(df.columns) == 2 and all(isinstance(col, int) or str(col).isdigit() for col in df.columns):
-                # Headerless CSV detected - reload with proper column names
-                df = pd.read_csv(input_file, header=None, names=[prompt_column, expected_column])
-                df = df.reset_index(drop=True)
-                print("📋 Detected headerless CSV format (prompt, expected_query structure)")
-            elif len(df.columns) == 2 and prompt_column not in df.columns:
-                # Two columns but doesn't have expected header - might be headerless or different naming
-                # Check if first value looks like a prompt
-                first_value = str(df.iloc[0, 0]) if len(df) > 0 else ""
-                if len(first_value) > 10 and not first_value.lower() in ['prompt', 'question', 'query']:
-                    # Likely headerless - reload
-                    df = pd.read_csv(input_file, header=None, names=[prompt_column, expected_column])
-                    df = df.reset_index(drop=True)
-                    print("📋 Detected headerless CSV format (prompt, expected_query structure)")
-                else:
-                    # Has headers but different names - map common variations
-                    col_map = {}
-                    for col in df.columns:
-                        col_lower = col.lower()
-                        if col_lower in ['prompt', 'question', 'nl', 'natural language', 'ask']:
-                            col_map[col] = prompt_column
-                        elif col_lower in ['query', 'kql', 'expected', 'expected query', 'expected_query']:
-                            col_map[col] = expected_column
-                    if col_map:
-                        df = df.rename(columns=col_map)
-                        print(f"📋 Mapped columns: {col_map}")
-        else:
+        prompts, test_cases, df = parse_prompts_from_file(input_file, prompt_col=prompt_column, expected_cols=[expected_column])
+    except Exception as e:
+        print(f"❌ Failed to read {file_type} file: {e}")
+        return
             df = pd.read_excel(input_file)
             df = df.reset_index(drop=True)
     except Exception as e:
@@ -108,18 +60,12 @@ async def process_file(
             print("💡 Make sure you have openpyxl installed: pip install openpyxl")
         return
     
-    # Validate columns
-    if prompt_column not in df.columns:
-        print(f"❌ Column '{prompt_column}' not found in Excel file")
-        print(f"Available columns: {', '.join(df.columns)}")
-        return
-    
-    # Add output columns if they don't exist
+    # Ensure output columns exist
     if output_column not in df.columns:
         df[output_column] = ""
     if reason_column not in df.columns:
         df[reason_column] = ""
-    
+
     print(f"✅ Found {len(df)} rows to process")
     print(f"🔧 Using workspace ID: {workspace_id}")
     
