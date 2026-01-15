@@ -339,17 +339,17 @@ class SchemaManager:
             return []
         try:
             client = LogsQueryClient(_azure_credential)
-            # Use a simple schema query instead of union * to avoid scanning data
-            # This queries the internal metadata tables which is much faster
+            # Use union with minimal data scanning - take(1) only reads one row per table
             query = (
-                "search *"
-                "| distinct $table"
-                "| sort by $table asc"
+                "union withsource=TableName * "
+                "| take 1 "
+                "| summarize by TableName "
+                "| sort by TableName asc"
             )
             t0 = time.time()
             print(f"[SchemaManager] Union enumeration start workspace={workspace_id} timespan_hours=1")
-            # Use minimal timespan (1 hour) since we're only discovering table names, not analyzing data
-            resp = client.query_workspace(workspace_id=workspace_id, query=query, timespan=timedelta(hours=1), server_timeout=30)
+            # Use minimal timespan (1 hour) and server timeout to keep it fast
+            resp = client.query_workspace(workspace_id=workspace_id, query=query, timespan=timedelta(hours=1), server_timeout=60)
             tables: list[Dict[str, Any]] = []
             if hasattr(resp, "tables") and resp.tables:
                 first = resp.tables[0]
