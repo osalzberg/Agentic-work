@@ -106,8 +106,9 @@ def extract_innermost_error(error_data):
 class KQLAgent:
     """Agent that processes natural language and calls MCP server tools"""
     
-    def __init__(self, workspace_id: str):
+    def __init__(self, workspace_id: str, user_token=None):
         self.workspace_id = workspace_id
+        self.user_token = user_token  # Azure AD token from authenticated user
         self.mcp_process = None
         
     async def start_mcp_server(self):
@@ -145,9 +146,13 @@ class KQLAgent:
             if tool_name == "execute_kql_query":
                 from azure.identity import DefaultAzureCredential
                 from azure.monitor.query import LogsQueryClient, LogsQueryStatus
+                from azure_agent.monitor_client import UserTokenCredential
                 
-                # Initialize client
-                credential = DefaultAzureCredential()
+                # Initialize client with user token if available
+                if self.user_token:
+                    credential = UserTokenCredential(self.user_token)
+                else:
+                    credential = DefaultAzureCredential()
                 client = LogsQueryClient(credential)
                 
                 workspace_id = arguments["workspace_id"]
@@ -239,8 +244,13 @@ class KQLAgent:
             elif tool_name == "validate_workspace_connection":
                 from azure.identity import DefaultAzureCredential
                 from azure.monitor.query import LogsQueryClient, LogsQueryStatus
+                from azure_agent.monitor_client import UserTokenCredential
                 
-                credential = DefaultAzureCredential()
+                # Initialize client with user token if available
+                if self.user_token:
+                    credential = UserTokenCredential(self.user_token)
+                else:
+                    credential = DefaultAzureCredential()
                 client = LogsQueryClient(credential)
                 
                 workspace_id = arguments["workspace_id"]

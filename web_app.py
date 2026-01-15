@@ -48,6 +48,22 @@ app = Flask(__name__)
 # Ensure workspace_id is defined before any early cache load attempts to avoid NameError
 workspace_id = None
 
+# Helper function to extract user token from Azure AD authentication headers
+def get_user_token():
+    """Extract access token from Azure AD Easy Auth headers.
+    
+    When Azure App Service Easy Auth is enabled, it adds headers with user info:
+    - X-MS-TOKEN-AAD-ACCESS-TOKEN: The user's access token for Azure AD resources
+    
+    Returns:
+        str or None: The access token if available, None otherwise
+    """
+    # Azure App Service Easy Auth provides the token in this header
+    token = request.headers.get('X-MS-TOKEN-AAD-ACCESS-TOKEN')
+    if token:
+        print(f"[Auth] Using authenticated user's token")
+    return token
+
 # Legacy compatibility globals (removed caching logic, retained empty structures for tests/UI expecting them)
 _workspace_schema_cache = {}
 _workspace_schema_refresh_flags = {}
@@ -1292,8 +1308,11 @@ def setup_workspace():
         if not workspace_id:
             return jsonify({'success': False, 'error': 'Workspace ID is required'})
         
-        # Initialize agent
-        agent = KQLAgent(workspace_id)
+        # Get user token from Azure AD authentication if available
+        user_token = get_user_token()
+        
+        # Initialize agent with optional user token
+        agent = KQLAgent(workspace_id, user_token=user_token)
         # Intentionally do NOT start schema fetch here to allow client to trigger and observe pending state
         print("[Setup] Workspace initialized; schema fetch will start on first /api/workspace-schema request.")
     # Skip early persistence; we'll persist only once tables or enrichment are available.
