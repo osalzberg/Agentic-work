@@ -2115,78 +2115,19 @@ def batch_test_parse():
         }), 400
     
     try:
-        import pandas as pd
-        
-        # Read file based on extension
-        if file.filename.endswith('.csv'):
-            # Try flexible CSV parsing to handle mixed delimiters
-            try:
-                df = pd.read_csv(file)
-            except Exception:
-                # Reset file pointer and try with flexible parsing
-                file.seek(0)
-                try:
-                    df = pd.read_csv(file, sep=None, engine='python')
-                except Exception:
-                    # Last resort: try with explicit quoting and skip bad lines
-                    file.seek(0)
-                    df = pd.read_csv(file, quotechar='"', escapechar='\\', on_bad_lines='skip')
-            # Ensure proper index and clean column names
-            df = df.reset_index(drop=True)
-            df.columns = df.columns.str.strip()
-            
-            # Map common column name variations
-            col_map = {}
-            for col in df.columns:
-                col_lower = col.lower()
-                if col_lower in ['question', 'nl', 'natural language', 'ask']:
-                    col_map[col] = 'Prompt'
-                elif col_lower in ['query', 'kql', 'expected', 'expected query', 'expected_query']:
-                    col_map[col] = 'Expected Query'
-            if col_map:
-                df = df.rename(columns=col_map)
-        else:
-            df = pd.read_excel(file)
-        
-        # Debug: Log actual columns and first row
-        print(f"[DEBUG parse] Columns after mapping: {list(df.columns)}")
-        if len(df) > 0:
-            print(f"[DEBUG parse] First row Prompt: {df['Prompt'].iloc[0] if 'Prompt' in df.columns else 'N/A'}")
-            for col in df.columns:
-                print(f"[DEBUG parse] First row [{col}]: {df[col].iloc[0]}")
-        
-        # Validate columns
-        if 'Prompt' not in df.columns:
-            return jsonify({
-                'success': False,
-                'error': 'File must have a "Prompt" column'
-            }), 400
-        
-        # Extract prompts and expected queries
-        prompts = df['Prompt'].fillna('').astype(str).tolist()
-        
-        # Also extract expected queries if available
-        test_cases = []
-        has_expected = 'Expected Query' in df.columns or 'Query' in df.columns
-        expected_col = 'Expected Query' if 'Expected Query' in df.columns else ('Query' if 'Query' in df.columns else None)
-        
-        for idx in range(len(df)):
-            test_case = {
-                'prompt': prompts[idx],
-                'expected_query': df[expected_col].iloc[idx] if expected_col and pd.notna(df[expected_col].iloc[idx]) else None
-            }
-            test_cases.append(test_case)
-        
+        from utils.file_parser import parse_prompts_from_file
+
+        prompts, test_cases, df = parse_prompts_from_file(file)
+
         return jsonify({
             'success': True,
             'prompts': prompts,
             'test_cases': test_cases
         })
-        
     except Exception as e:
         import traceback
         error_details = traceback.format_exc()
-        print(f"[BatchParse] Error parsing Excel file: {error_details}")
+        print(f"[BatchParse] Error parsing file: {error_details}")
         return jsonify({
             'success': False,
             'error': f'Error parsing file: {str(e)}'
@@ -2235,25 +2176,62 @@ def batch_test_build():
             ['API Version', api_version],
             ['System Prompt', system_prompt],
             ['Timestamp', datetime.now().strftime('%Y-%m-%d %H:%M:%S')],
-            [''],
-            ['SUMMARY', ''],
-            ['Total', total_count],
-            ['Successful', success_count],
-            ['Failed', failed_count],
-            ['Wrong Query Generated', wrong_query_count],
-            ['']
         ]
+
+        # The server will not attempt to measure end-to-end batch elapsed time. Callers measure wall-clock time.
         
         # Create DataFrame
         rows = []
+
+        # First pass: collect union of all execution-stat keys across results for gen and exp
+        gen_keys = set()
+        exp_keys = set()
+        for rr in results:
+            gen = rr.get('gen_statistics') or rr.get('execution_statistics_gen') or {}
+            exp = rr.get('exp_statistics') or rr.get('execution_statistics_exp') or {}
+            if isinstance(gen, dict):
+                for k in gen.keys():
+                    gen_keys.add(k)
+            if isinstance(exp, dict):
+                for k in exp.keys():
+                    exp_keys.add(k)
+
+        # Convert to stable lists for consistent column order
+        gen_keys = sorted(list(gen_keys))
+        exp_keys = sorted(list(exp_keys))
+
+        # Helper to safely extract stat values
+        def _stat_val(stats, key):
+            if not stats or not isinstance(stats, dict):
+                return None
+            return stats.get(key)
+
         for r in results:
+            # Pretty-print execution statistics for Excel cells
+            def _pretty_stats(obj):
+                import json as _json
+                try:
+                    if obj is None:
+                        return None
+                    # If it's already a string, return as-is
+                    if isinstance(obj, str):
+                        return obj
+                    return _json.dumps(obj, ensure_ascii=False)
+                except Exception:
+                    try:
+                        return str(obj)
+                    except Exception:
+                        return None
+
             row_data = {
                 'Prompt': r.get('prompt', ''),
                 'Expected Query': r.get('expected_query', ''),
                 'Generated Query': r.get('query', ''),
                 'Execution Success': r.get('execution_success', False),
-                'Expected Rows Count': r.get('expected_rows_count'),
-                'Returned Rows Count': r.get('returned_rows_count'),
+                    'Expected Rows Count': r.get('expected_rows_count') if r.get('expected_rows_count') is not None else None,
+                    'Returned Rows Count': r.get('returned_rows_count') if r.get('returned_rows_count') is not None else None,
+                'Execution Statistics (gen)': _pretty_stats(r.get('gen_statistics')),
+                'Execution Statistics (exp)': _pretty_stats(r.get('exp_statistics')),
                 'Summary': r.get('reason', '')
             }
             
@@ -2263,18 +2241,107 @@ def batch_test_build():
                 components = score.get('components', {})
                 row_data['Total Score'] = score.get('total_score', 0)
                 row_data['Score Status'] = 'PASS' if score.get('is_successful', False) else 'FAIL'
-                row_data['Results Match Score'] = components.get('results_match', {}).get('score', 0)
-                row_data['Structural Similarity Score'] = components.get('structural_similarity', {}).get('score', 0)
-                row_data['LLM Grading Score'] = components.get('llm_grading', {}).get('score', 0)
-                row_data['LLM Reasoning'] = components.get('llm_grading', {}).get('details', {}).get('reasoning', '')
+                # Results match (if consumer provides it)
+                # Prefer canonical nested components.results_match.components values
+                results_match_score = None
+                schema_match_score = None
+                rows_match_score = None
+                # Try canonical flattened numeric fields first
+                if 'results_match' in score:
+                    try:
+                        results_match_score = float(score.get('results_match'))
+                    except Exception:
+                        results_match_score = None
+                # Try to read from nested components structure
+                try:
+                    rm = components.get('results_match', {}) if isinstance(components, dict) else {}
+                    if isinstance(rm, dict) and 'score' in rm:
+                        results_match_score = float(rm.get('score'))
+                    comps = rm.get('components', {}) if isinstance(rm, dict) else {}
+                    if isinstance(comps, dict):
+                        if 'schema_match' in comps and isinstance(comps.get('schema_match'), dict) and 'score' in comps.get('schema_match'):
+                            schema_match_score = float(comps.get('schema_match').get('score'))
+                        if 'rows_match' in comps and isinstance(comps.get('rows_match'), dict) and 'score' in comps.get('rows_match'):
+                            rows_match_score = float(comps.get('rows_match').get('score'))
+                except Exception:
+                    schema_match_score = None
+                    rows_match_score = None
+
+                # Fallback: try to read comparator details if available in legacy fields
+                if schema_match_score is None or rows_match_score is None:
+                    schema_result = score.get('schema_result', {}) or {}
+                    rows_result = score.get('rows_result', {}) or {}
+                    try:
+                        if schema_match_score is None:
+                            schema_match_score = float(schema_result.get('details', {}).get('overlap_ratio', 0.0) or 0.0)
+                    except Exception:
+                        schema_match_score = 0.0
+                    try:
+                        if rows_match_score is None:
+                            rows_match_score = float(rows_result.get('details', {}).get('overlap_ratio', 0.0) or 0.0)
+                    except Exception:
+                        rows_match_score = 0.0
+
+                # Derive results_match_score if still missing
+                if results_match_score is None:
+                    try:
+                        results_match_score = (float(schema_match_score or 0.0) + float(rows_match_score or 0.0)) / 2.0
+                    except Exception:
+                        results_match_score = 0.0
+
+                row_data['Results Match Score'] = round(float(results_match_score), 3)
+                row_data['Schema Match Score'] = round(float(schema_match_score or 0.0), 3)
+                row_data['Rows Match Score'] = round(float(rows_match_score or 0.0), 3)
+                # Query similarity (LLM-only canonical field)
+                query_sim = score.get('query_similarity') if 'query_similarity' in score else None
+                row_data['Query Similarity Score'] = query_sim if query_sim is not None else 0
             else:
                 row_data['Total Score'] = None
                 row_data['Score Status'] = 'N/A'
                 row_data['Results Match Score'] = None
-                row_data['Structural Similarity Score'] = None
-                row_data['LLM Grading Score'] = None
-                row_data['LLM Reasoning'] = ''
-            
+                row_data['Schema Match Score'] = None
+                row_data['Rows Match Score'] = None
+                row_data['Query Similarity Score'] = None
+            # Ensure expected/returned row count columns exist even if missing from score
+            if 'Expected Rows Count' not in row_data:
+                row_data['Expected Rows Count'] = r.get('expected_rows_count') if r.get('expected_rows_count') is not None else None
+            if 'Returned Rows Count' not in row_data:
+                row_data['Returned Rows Count'] = r.get('returned_rows_count') if r.get('returned_rows_count') is not None else None
+            if 'Execution Statistics (gen)' not in row_data:
+                row_data['Execution Statistics (gen)'] = r.get('gen_statistics')
+            if 'Execution Statistics (exp)' not in row_data:
+                row_data['Execution Statistics (exp)'] = r.get('exp_statistics')
+            # compute zero-rows warning (results_match == 1.0 but returned rows == 0 or None)
+            zero_rows_warning = False
+            try:
+                rs = None
+                if r.get('score') and isinstance(r.get('score'), dict):
+                    rs = r.get('score').get('results_match')
+                    # nested canonical
+                    if rs is None:
+                        comps = r.get('score').get('components', {}) or {}
+                        rm = comps.get('results_match') if isinstance(comps, dict) else None
+                        if isinstance(rm, dict):
+                            rs = rm.get('score')
+                if rs is not None:
+                    try:
+                        if float(rs) >= 1.0 and (r.get('returned_rows_count') in (None, 0)):
+                            zero_rows_warning = True
+                    except Exception:
+                        zero_rows_warning = False
+            except Exception:
+                zero_rows_warning = False
+
+            row_data['Zero Rows Warning'] = zero_rows_warning
+
+            # Promote dynamic stat keys for gen and exp
+            gen_stats = r.get('gen_statistics') or r.get('execution_statistics_gen') or {}
+            exp_stats = r.get('exp_statistics') or r.get('execution_statistics_exp') or {}
+            for k in gen_keys:
+                row_data[f'gen_{k}'] = _stat_val(gen_stats, k)
+            for k in exp_keys:
+                row_data[f'exp_{k}'] = _stat_val(exp_stats, k)
+
             rows.append(row_data)
         
         df = pd.DataFrame(rows)
@@ -2303,6 +2370,21 @@ def batch_test_build():
         excel_report_path = os.path.join(reports_dir, excel_filename)
         
         # Save JSON report
+        # Build sanitized JSON report. Include deterministic comparison details and LLM query similarity
+        def _strip_reasoning(obj):
+            if isinstance(obj, dict):
+                cleaned = {}
+                for k, v in obj.items():
+                    if k in ('reasoning', 'explanation', 'llm_reasoning', 'llm_explanation'):
+                        continue
+                    cleaned[k] = _strip_reasoning(v)
+                return cleaned
+            if isinstance(obj, list):
+                return [_strip_reasoning(i) for i in obj]
+            return obj
+
+        # NOTE: client-side elapsed is measured by the caller (CLI or browser).
+        # The server does not include client-measured elapsed time in exported metadata.
         json_data = {
             'metadata': {
                 'model': model_deployment,
@@ -2313,20 +2395,134 @@ def batch_test_build():
                     'total': total_count,
                     'successful': success_count,
                     'failed': failed_count,
-                    'wrong_query': wrong_query_count
+                    'wrong_query': wrong_query_count,
+                    'total_returned_rows': sum([r.get('returned_rows_count') or 0 for r in results])
                 }
             },
-            'results': [{
+            'results': []
+        }
+
+        for r in results:
+            orig_score = r.get('score') or {}
+            sanitized_score = {}
+            # Include canonical numeric fields and deterministic comparison results
+            for k in ('total_score', 'is_successful', 'query_similarity', 'results_match', 'results_match_score'):
+                if k in orig_score:
+                    sanitized_score[k] = orig_score[k]
+            # Build normalized components (Pattern 1) for export. Prefer canonical fields but fall back gracefully.
+            orig_components = _strip_reasoning(orig_score.get('components', {})) if 'components' in orig_score else {}
+
+            # Extract query similarity (LLM) from known locations or components
+            qsim = None
+            if 'query_similarity' in orig_score:
+                try:
+                    qsim = float(orig_score.get('query_similarity'))
+                except Exception:
+                    qsim = None
+            # Do not accept legacy 'llm_score' as a fallback; require canonical 'query_similarity' or components.llm_grading
+            if qsim is None and isinstance(orig_components, dict):
+                lg = orig_components.get('llm_grading') or orig_components.get('llm_grade') or orig_components.get('query_similarity')
+                if isinstance(lg, dict) and 'score' in lg:
+                    try:
+                        qsim = float(lg.get('score'))
+                    except Exception:
+                        qsim = None
+
+            # Extract results_match numeric score
+            rmatch = None
+            if 'results_match' in orig_score:
+                try:
+                    rmatch = float(orig_score.get('results_match'))
+                except Exception:
+                    rmatch = None
+            if rmatch is None and isinstance(orig_components, dict):
+                rm = orig_components.get('results_match')
+                if isinstance(rm, dict) and 'score' in rm:
+                    try:
+                        rmatch = float(rm.get('score'))
+                    except Exception:
+                        rmatch = None
+
+            # If still None, attempt to compute from comparator details if available (but do not export raw comparator dicts)
+            schema_overlap = 0.0
+            rows_overlap = 0.0
+            schema_result = orig_score.get('schema_result', {}) or {}
+            rows_result = orig_score.get('rows_result', {}) or {}
+            try:
+                schema_overlap = float(schema_result.get('details', {}).get('overlap_ratio', 0.0) or 0.0)
+            except Exception:
+                schema_overlap = 0.0
+            try:
+                rows_overlap = float(rows_result.get('details', {}).get('overlap_ratio', 0.0) or 0.0)
+            except Exception:
+                rows_overlap = 0.0
+
+            if rmatch is None:
+                rmatch = (schema_overlap + rows_overlap) / 2.0
+
+            # Default qsim to neutral 0.5 if missing
+            if qsim is None:
+                qsim = 0.5
+
+            # Use same weights as scorer
+            results_weight = 0.5
+            query_weight = 0.5
+
+            normalized_components = {
+                'query_similarity': {
+                    'score': round(float(qsim), 3),
+                    'weight': query_weight,
+                    'weighted_score': round(float(qsim) * query_weight, 3)
+                },
+                'results_match': {
+                    'score': round(float(rmatch), 3),
+                    'weight': results_weight,
+                    'weighted_score': round(float(rmatch) * results_weight, 3),
+                    'components': {
+                        'schema_match': {'score': round(float(schema_overlap), 3)},
+                        'rows_match': {'score': round(float(rows_overlap), 3)}
+                    }
+                }
+            }
+
+            sanitized_score['components'] = normalized_components
+            sanitized_score['query_similarity'] = round(float(qsim), 3)
+            sanitized_score['results_match'] = round(float(rmatch), 3)
+
+            # compute zero_rows_warning for JSON export as well
+            zero_rows_warning = False
+            try:
+                rs_val = None
+                if 'results_match' in (r.get('score') or {}):
+                    rs_val = (r.get('score') or {}).get('results_match')
+                else:
+                    # try nested
+                    comps = (r.get('score') or {}).get('components') or {}
+                    rm = comps.get('results_match') if isinstance(comps, dict) else None
+                    if isinstance(rm, dict):
+                        rs_val = rm.get('score')
+                if rs_val is not None:
+                    try:
+                        if float(rs_val) >= 1.0 and (r.get('returned_rows_count') in (None, 0)):
+                            zero_rows_warning = True
+                    except Exception:
+                        zero_rows_warning = False
+            except Exception:
+                zero_rows_warning = False
+
+            json_data['results'].append({
                 'prompt': r.get('prompt', ''),
                 'expected_query': r.get('expected_query', ''),
                 'generated_query': r.get('query', ''),
                 'execution_success': r.get('execution_success', False),
                 'expected_rows_count': r.get('expected_rows_count'),
                 'returned_rows_count': r.get('returned_rows_count'),
+                'execution_statistics_gen': r.get('gen_statistics'),
+                'execution_statistics_exp': r.get('exp_statistics'),
                 'summary': r.get('reason', ''),
-                'score': r.get('score')  # Include full score object if available
-            } for r in results]
-        }
+                'score': sanitized_score,
+                'zero_rows_warning': zero_rows_warning
+            })
         
         import json
         with open(json_report_path, 'w', encoding='utf-8') as f:
@@ -2349,6 +2545,15 @@ def batch_test_build():
         except Exception:
             encoded_json = None
 
+        # Build a lightweight summary for immediate UI consumption
+        response_summary = {
+            'total': total_count,
+            'successful': success_count,
+            'failed': failed_count,
+            'wrong_query': wrong_query_count,
+            'total_returned_rows': sum([r.get('returned_rows_count') or 0 for r in results])
+        }
+
         return jsonify({
             'success': True,
             'file_data': encoded_file,
@@ -2361,7 +2566,9 @@ def batch_test_build():
                 'deployment': model_deployment,
                 'api_version': api_version
             },
-            'system_prompt': system_prompt
+            'system_prompt': system_prompt,
+            # Expose summary at top-level for the UI
+            'summary': response_summary
         })
         
     except ImportError:

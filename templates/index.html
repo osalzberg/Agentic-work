@@ -2237,10 +2237,10 @@
                     </div>
                     
                     <div style="display:flex; gap:10px; margin-top:8px;">
-                        <button id="downloadResultsBtn" class="btn btn-success" onclick="downloadBatchResults()" style="flex:1; min-width:0;">
+                        <button id="downloadResultsBtn" class="btn btn-success" onclick="downloadBatchResults()" style="flex:1; min-width:0; font-size:16px; font-weight:500;">
                             💾 Download Results Excel File
                         </button>
-                        <button id="downloadJsonResultsBtn" class="btn btn-primary" onclick="downloadBatchJsonResults()" style="flex:1; min-width:0;">
+                        <button id="downloadJsonResultsBtn" class="btn btn-primary" onclick="downloadBatchJsonResults()" style="flex:1; min-width:0; font-size:16px; font-weight:500;">
                             💾 Download Results JSON File
                         </button>
                     </div>
@@ -5111,6 +5111,8 @@ async function processQuestionWithRetry(question) {
                 updateBatchProgress(95, 'Building Excel file...');
 
                 // Now send all results to backend to build Excel
+                // Record client start time (ms since epoch) and measure locally (wall-clock)
+                const clientStart = Date.now();
                 const buildResponse = await fetch('/api/batch-test/build', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -5122,6 +5124,8 @@ async function processQuestionWithRetry(question) {
                 });
 
                 const buildData = await buildResponse.json();
+                // Measure client-side elapsed time (wall-clock) from request start to response parsing
+                const clientElapsedSec = Math.round((Date.now() - clientStart) / 1000);
 
                     if (buildData.success) {
                     updateBatchProgress(100, 'Complete!');
@@ -5134,7 +5138,7 @@ async function processQuestionWithRetry(question) {
                         jsonFilename: buildData.json_filename
                     };
 
-                    // Calculate summary
+                    // Calculate summary. Prefer client-measured elapsed time (wall-clock) over backend's aggregated duration.
                     const summary = {
                         total: results.length,
                         success: results.filter(r => r.status === 'success').length,
@@ -5143,11 +5147,16 @@ async function processQuestionWithRetry(question) {
                         model_info: buildData.model_info,
                         system_prompt: buildData.system_prompt,
                         json_report_path: buildData.json_report_path,
-                        excel_report_path: buildData.excel_report_path
+                        excel_report_path: buildData.excel_report_path,
+                        // client-measured elapsed seconds; override backend elapsed when present
+                        batch_elapsed_sec: clientElapsedSec,
+                        total_returned_rows: buildData.summary ? buildData.summary.total_returned_rows : (results.reduce((acc, r) => acc + (r.returned_rows_count || 0), 0))
                     };
 
                     // Show summary
                     displayBatchSummary(summary, results);
+                    // Persist client elapsed into batchResultsData too for use elsewhere
+                    batchResultsData.client_elapsed_sec = clientElapsedSec;
                     // Batch report links removed: no DOM report link elements will be created or modified.
                     setTimeout(() => {
                         document.getElementById('batchProgressSection').style.display = 'none';
@@ -5245,7 +5254,7 @@ async function processQuestionWithRetry(question) {
                         messageEl.style.color = statusColor;
                     }
                 } else if (status === 'success') {
-                    // For success: show query in grey, then execution result and score in green
+                        // For success: show query in grey, then execution result and score in green
                     let resultText = rowCount !== undefined && rowCount !== null ? `Query executed (results: ${rowCount})` : 'Query executed';
                     if (scoreData) {
                         const c = scoreData.components;
@@ -5253,9 +5262,20 @@ async function processQuestionWithRetry(question) {
                         resultText += `<br><span style="font-size: 0.85em;">`;
                         // Only show Results match and Query similarity (llm_score)
                         const resultsMatch = (c.results_match && c.results_match.score !== undefined && c.results_match.score !== null) ? `${(c.results_match.score * 100).toFixed(0)}%` : 'N/A';
-                        const querySimilarity = (scoreData.llm_score !== undefined && scoreData.llm_score !== null) ? `${(scoreData.llm_score * 100).toFixed(0)}%` : 'N/A';
+                        // Prefer normalized property names. Older code used `llm_score` while newer scoring returns `query_similarity`.
+                        const _querySimVal = (scoreData.query_similarity !== undefined && scoreData.query_similarity !== null) ? scoreData.query_similarity : (scoreData.llm_score !== undefined && scoreData.llm_score !== null ? scoreData.llm_score : null);
+                        const querySimilarity = _querySimVal !== null ? `${(_querySimVal * 100).toFixed(0)}%` : 'N/A';
                         resultText += `Results match: ${resultsMatch} | Query similarity: ${querySimilarity}`;
                         resultText += `</span>`;
+                        // Show warning badge if results_match == 100% but returned rows is zero
+                        try {
+                            const numericResultsMatch = (c && c.results_match && typeof c.results_match.score === 'number') ? c.results_match.score : (scoreData.results_match || null);
+                            if (numericResultsMatch !== null && numericResultsMatch >= 1.0 && (rowCount === 0 || rowCount === null)) {
+                                resultText += `<div style="margin-top:8px; color:#9a5700; font-weight:600;">⚠️ Warning: Perfect results match reported but zero rows were returned.</div>`;
+                            }
+                        } catch (e) {
+                            // ignore badge errors
+                        }
                     }
                     messageEl.innerHTML = `<div style="color: #6c757d; font-family: monospace; margin-bottom: 8px;">${message}</div><div style="color: ${statusColor};">${resultText}</div>`;
                 } else {
@@ -5297,9 +5317,13 @@ async function processQuestionWithRetry(question) {
             document.getElementById('batchSummary').innerHTML = summaryHtml + `
                 <div style="grid-column: 1 / -1; margin-top: 20px; padding: 15px; background: white; border-radius: 8px;">
                     <div style="font-weight: bold; color: #667eea; margin-bottom: 10px;">🤖 Model Information</div>
-                    <div style="color: #666; font-size: 0.9rem; margin-bottom: 5px;"><strong>Deployment:</strong> ${escapeHtml(modelInfo.deployment || 'Unknown')}</div>
+                    <div style="color: #666; font-size: 0.9rem; margin-bottom: 5px;"><strong>Model:</strong> ${escapeHtml(modelInfo.deployment || 'Unknown')}</div>
                     <div style="color: #666; font-size: 0.9rem; margin-bottom: 10px;"><strong>API Version:</strong> ${escapeHtml(modelInfo.api_version || 'Unknown')}</div>
-                    
+                    <div style="display:flex; gap:10px; margin-top:12px;">
+                        ${summary.batch_elapsed_sec ? `<div style="padding:10px; background:#f8f8f8; border-radius:6px;"><strong>Elapsed:</strong><div>${summary.batch_elapsed_sec}s</div></div>` : ''}
+                        ${summary.total_returned_rows !== undefined ? `<div style="padding:10px; background:#f8f8f8; border-radius:6px;"><strong>Returned Rows:</strong><div>${summary.total_returned_rows}</div></div>` : ''}
+                    </div>
+
                     <div style="font-weight: bold; color: #667eea; margin-bottom: 5px;">📝 System Prompt</div>
                     <div style="color: #666; font-size: 0.85rem; font-family: monospace; background: #f8f9fa; padding: 10px; border-radius: 4px; white-space: pre-wrap;">${escapeHtml(systemPrompt)}</div>
                 </div>
@@ -5382,6 +5406,7 @@ async function processQuestionWithRetry(question) {
                         <div style="font-weight: bold; color: #ff9800; margin-bottom: 5px;">Row ${r.row}</div>
                         <div style="color: #666; margin-bottom: 5px; font-size: 0.9rem;">${escapeHtml(r.prompt || 'No prompt')}</div>
                         <div style="color: #666; font-family: monospace; font-size: 0.85rem; margin-top: 5px;">${escapeHtml((r.query || '').substring(0, 200))}${r.query && r.query.length > 200 ? '...' : ''}</div>
+                        <div style="color: #666; font-size: 0.85rem; margin-top: 6px;">${r.returned_rows_count !== undefined && r.returned_rows_count !== null ? `Query executed (results: ${r.returned_rows_count})` : ''}</div>
                         ${scoreHtml}
                     </div>
                     `;

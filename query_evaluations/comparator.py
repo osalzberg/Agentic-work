@@ -178,7 +178,16 @@ def compare_rows(expected_rows: List[List[str]], actual_rows: List[List[str]], s
         matched = 0
         for row, cnt in c_expected.items():
             matched += min(cnt, c_actual.get(row, 0))
-        overlap_ratio = (matched / float(len(reduced_expected) or 1))
+        # multiset Jaccard (intersection / union)
+        intersection = matched
+        union = 0
+        all_keys = set(list(c_expected.keys()) + list(c_actual.keys()))
+        for row in all_keys:
+            union += max(c_expected.get(row, 0), c_actual.get(row, 0))
+        if union == 0:
+            overlap_ratio = 1.0
+        else:
+            overlap_ratio = intersection / float(union)
         result["match"] = c_expected == c_actual
         result["mismatches"] = 0 if result["match"] else abs(sum(c_expected.values()) - sum(c_actual.values()))
         result["details"] = {
@@ -187,5 +196,7 @@ def compare_rows(expected_rows: List[List[str]], actual_rows: List[List[str]], s
             "actual_count": len(reduced_actual),
             "overlap_ratio": overlap_ratio,
             "strict_order": False,
+            "intersection": intersection,
+            "union": union,
         }
         return result
