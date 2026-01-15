@@ -96,7 +96,9 @@ DOCS_META_MAX_SECONDS = float(os.environ.get("DOCS_META_MAX_SECONDS", "10"))  # 
 DOCS_ENRICH_MAX_TABLES = int(os.environ.get("DOCS_ENRICH_MAX_TABLES", "8"))  # cap number of unmatched tables to enrich per request
 DOCS_ENRICH_MAX_SECONDS = float(os.environ.get("DOCS_ENRICH_MAX_SECONDS", "5"))  # cumulative time budget per request
 DOCS_ENRICH_COLUMN_FETCH = bool(os.environ.get("DOCS_ENRICH_COLUMN_FETCH", "1"))  # allow disabling column scraping (heavier)
-DISABLE_SCHEMA_FETCH = bool(os.environ.get("DISABLE_SCHEMA_FETCH"))  # Disable all schema and table queries fetching on workspace connect
+# Fix: Properly parse "1" as True
+DISABLE_SCHEMA_FETCH = os.environ.get("DISABLE_SCHEMA_FETCH", "0") in ("1", "true", "True", "TRUE", "yes")
+print(f"[Config] DISABLE_SCHEMA_FETCH={DISABLE_SCHEMA_FETCH} (raw value: {os.environ.get('DISABLE_SCHEMA_FETCH', 'not set')})")
 
 
 # Generic examples fallback
