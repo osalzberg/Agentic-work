@@ -1,4 +1,87 @@
 from __future__ import annotations
+from typing import List
+from azure_openai_utils import OpenAIClient
+import json
+
+
+def grade_semantic_similarity(expected_kql: str, generated_kql: str) -> tuple[float | None, dict]:
+    """Grade the semantic similarity between two KQL queries using LLM.
+
+    Asks the LLM to compare the queries and return a similarity score from 0.0 (completely different)
+    to 1.0 (identical), while ignoring differences in column names created by projections,
+    aggregations, or alias assignments.
+
+    Returns:
+        float: Similarity score between 0.0 and 1.0, or None if grading fails
+    """
+    if not expected_kql or not expected_kql.strip():
+        return None
+    if not generated_kql or not generated_kql.strip():
+        return None
+
+    try:
+        client = OpenAIClient()
+        system = (
+            "You are an expert KQL query evaluator. Compare two KQL queries and grade their semantic similarity "
+            "on a scale from 0.0 (completely different) to 1.0 (identical). "
+            "Ignore differences in:\n"
+            "- Column names or aliases (e.g., 'Name' vs 'PodName', 'count()' vs 'LogCount')\n"
+            "- Whitespace and formatting\n"
+            "- Comment differences\n"
+            "\n"
+            "Focus on semantic equivalence:\n"
+            "- Same source table(s)\n"
+            "- Same filtering logic\n"
+            "- Same aggregation operations (even if column names differ)\n"
+            "- Same grouping logic\n"
+            "- Same ordering logic\n"
+            "- Same limiting/top logic\n"
+            "\n"
+            "Return ONLY a single decimal number between 0.0 and 1.0, nothing else."
+        )
+
+        prompt = f"Expected query:\n{expected_kql}\n\nGenerated query:\n{generated_kql}\n\nSimilarity score:"
+
+        res = client.grade_semantic_similarity(
+            system_prompt=system,
+            summary=prompt,
+            max_tokens=500,
+            temperature=0.0,
+            top_p=0.9,
+            allow_escalation=True,
+        )
+        # res is a ChatResult
+        content = (res.content or "").strip()
+        raw = {
+            "content": res.content,
+            "error": res.error,
+            "finish_reason": res.finish_reason,
+            "attempts": res.attempts,
+            "metadata": res.metadata,
+            "raw_response": res.raw,
+        }
+
+        # Debug logging: show a short summary of the LLM response for diagnostics
+        try:
+            raw_snippet = json.dumps(res.raw, default=str)[:1000] if res.raw else ""
+        except Exception:
+            raw_snippet = str(res.raw)[:1000]
+        print(
+            f"[LLM Grading] content_len={len(content)} error={res.error} finish_reason={res.finish_reason} raw_snippet={raw_snippet}"
+        )
+
+        # Parse the score
+        try:
+            score = float(content)
+            # Clamp to valid range
+            return max(0.0, min(1.0, score)), raw
+        except ValueError:
+            print(f"[LLM Grading] Failed to parse score from response content: {content}")
+            return None, raw
+
+    except Exception as e:
+        print(f"[LLM Grading] Exception during grading: {type(e).__name__}: {e}")
+        return None, {"error": f"{type(e).__name__}: {e}"}
 
 
 def fuzzy_column_alignment(

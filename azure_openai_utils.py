@@ -844,6 +844,14 @@ class OpenAIClient:
             **kwargs,
         )
 
+    def grade_semantic_similarity(self, system_prompt: str, summary: str, **kwargs) -> ChatResult:
+        return self.chat(
+            system_prompt=system_prompt,
+            user_prompt=summary,
+            purpose="grade_semantic_similarity",
+            **kwargs,
+        )
+    
     def explain(self, system_prompt: str, summary: str, **kwargs) -> ChatResult:
         return self.chat(
             system_prompt=system_prompt,

@@ -11,9 +11,9 @@ from typing import Any, Dict, List, Tuple
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "query_evaluations"))
 
 from query_evaluations.comparator import (compare_rows,  # type: ignore
-                                          compare_schema)
-from query_evaluations.explainer import grade_kql_similarity  # type: ignore
-from query_evaluations.kql_parser import compare_kql_semantic  # type: ignore
+                                          compare_schema,
+                                          grade_semantic_similarity)
+
 
 
 def calculate_llm_graded_score(
@@ -35,16 +35,22 @@ def calculate_llm_graded_score(
         actual_model = config.deployment if config else "unknown"
 
         # Use query_evaluations LLM grading (uses same OpenAI config as query generation)
-        score = grade_kql_similarity(expected_kql, generated_kql)
+        score, raw = grade_semantic_similarity(expected_kql, generated_kql)
 
         if score is None:
+            # Log raw grading response for diagnostics
+            print(
+                "[calculate_llm_graded_score] LLM grading returned None. Raw response:",
+                raw,
+            )
             return 0.5, {
                 "error": "LLM grading failed",
                 "score": 0.5,
                 "reasoning": "Error during grading, assigned neutral score",
+                "raw": raw,
             }
 
-        details = {"score": score, "model": actual_model}
+        details = {"score": score, "model": actual_model, "raw": raw}
 
         return score, details
 
@@ -65,21 +71,95 @@ def calculate_total_score(
     generated_results: List[Dict],
     expected_results: List[Dict],
     prompt: str,
+    *,
+    generated_exec_stats: Dict[str, Any] | None = None,
+    expected_exec_stats: Dict[str, Any] | None = None,
 ) -> Dict[str, Any]:
     """
     Calculate total score using query_evaluations scoring system.
     Uses the same Azure OpenAI deployment as query generation for LLM grading.
 
     Weights:
-    - results_match: 0.55 (combines schema and rows match)
-    - structural_similarity: 0.15
-    - llm_graded_similarity: 0.30
+    - results_match: 0.5 (combines schema and rows match)
+    - llm_graded_similarity: 0.5
 
     Note: Execution success is a gate (if execution fails, categorized as "Failed" with NA scores)
     Success threshold: weighted score >= 0.9
     """
 
     # Compute results/schema matching using deterministic comparators
+    # --- Guard: if generated_kql is not a string (e.g., an object with an execution error),
+    # or if execution produced an error recorded in exec_stats, treat as execution failure
+    # and return a deterministic failed score instead of neutral fallbacks.
+    if not isinstance(generated_kql, str):
+        # Try to pull an error message if available
+        gen_err = None
+        try:
+            gen_err = getattr(generated_kql, "get", lambda k, d=None: d)("error", None) if hasattr(generated_kql, "get") else None
+        except Exception:
+            gen_err = None
+        diag = {"reason": "generated_query_not_string", "generated_query_raw": str(generated_kql), "error": gen_err}
+        components = {
+            "query_similarity": {
+                "score": 0.0,
+                "weight": 0.5,
+                "weighted_score": 0.0,
+                "explanation": "Generated query failed to produce a KQL string (execution or generation error)",
+            },
+            "results_match": {
+                "score": 0.0,
+                "weight": 0.5,
+                "weighted_score": 0.0,
+                "components": {
+                    "schema_match": {"score": 0.0, "explanation": "Execution failed"},
+                    "rows_match": {"score": 0.0, "explanation": "Execution failed"},
+                },
+            },
+        }
+        return {
+            "total_score": 0.0,
+            "is_successful": False,
+            "threshold": 0.9,
+            "weights": {"results_match": 0.5, "query_similarity": 0.5},
+            "components": components,
+            "query_similarity": 0.0,
+            "results_match": 0.0,
+            "diagnostics": diag,
+        }
+
+    # If execution stats indicate an error, treat as failure
+    if generated_exec_stats and isinstance(generated_exec_stats, dict):
+        err = generated_exec_stats.get("error") or generated_exec_stats.get("message")
+        status = str(generated_exec_stats.get("status") or "").lower()
+        if err or status in ("failed", "error", "error_message"):
+            diag = {"reason": "generated_execution_error", "exec_stats": generated_exec_stats}
+            components = {
+                "query_similarity": {
+                    "score": 0.0,
+                    "weight": 0.5,
+                    "weighted_score": 0.0,
+                    "explanation": "Generated query execution failed",
+                },
+                "results_match": {
+                    "score": 0.0,
+                    "weight": 0.5,
+                    "weighted_score": 0.0,
+                    "components": {
+                        "schema_match": {"score": 0.0, "explanation": "Execution failed"},
+                        "rows_match": {"score": 0.0, "explanation": "Execution failed"},
+                    },
+                },
+            }
+            return {
+                "total_score": 0.0,
+                "is_successful": False,
+                "threshold": 0.9,
+                "weights": {"results_match": 0.5, "query_similarity": 0.5},
+                "components": components,
+                "query_similarity": 0.0,
+                "results_match": 0.0,
+                "diagnostics": diag,
+            }
     try:
         schema_result = compare_schema(
             expected_columns or [], generated_columns or [], strict_order=False

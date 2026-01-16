@@ -1772,51 +1772,36 @@ def process_query():
         if not question:
             return jsonify({"success": False, "error": "Question is required"})
 
-        # Set overrides if provided
-        from azure_openai_utils import clear_model_override, set_model_override
-        from prompt_builder import (clear_system_prompt_override,
-                                    set_system_prompt_override)
+        # Use shared generator helper to ensure identical generation behavior
+        from utils.generator import generate_kql
 
-        if model:
-            set_model_override(model)
-        if system_prompt:
-            set_system_prompt_override(system_prompt)
+        result = generate_kql(agent, question, model=model, system_prompt=system_prompt)
 
-        # Run the async query processing
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
+        # If the helper returned a coroutine result that couldn't be run, ensure we handle it
+        response_payload = {
+            "success": True,
+            "result": result,
+            "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        }
+        # Expose examples_error and candidate scores when container selection failed
+        if (
+            isinstance(result, str)
+            and result.startswith("// Error")
+            and "domain=containers" in result
+            and "selected_example_count=0" in result
+        ):
+            try:
+                from nl_to_kql import load_container_shots
 
-        try:
-            result = loop.run_until_complete(agent.process_natural_language(question))
-            response_payload = {
-                "success": True,
-                "result": result,
-                "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            }
-            # Expose examples_error and candidate scores when container selection failed
-            if (
-                isinstance(result, str)
-                and result.startswith("// Error")
-                and "domain=containers" in result
-                and "selected_example_count=0" in result
-            ):
-                try:
-                    from nl_to_kql import load_container_shots
-
-                    ctx = load_container_shots(question)
-                    response_payload["examples_error"] = ctx.get("examples_error")
-                    response_payload["top_candidate_scores"] = ctx.get(
-                        "top_candidate_scores"
-                    )
-                except Exception as expose_exc:
-                    response_payload["examples_error"] = f"expose_failed: {expose_exc}"
-            return jsonify(response_payload)
-        finally:
-            loop.close()
-            clear_model_override()  # Clean up
-            from prompt_builder import clear_system_prompt_override
-
-            clear_system_prompt_override()  # Clean up
+                ctx = load_container_shots(question)
+                response_payload["examples_error"] = ctx.get("examples_error")
+                response_payload["top_candidate_scores"] = ctx.get(
+                    "top_candidate_scores"
+                )
+            except Exception as expose_exc:
+                response_payload["examples_error"] = f"expose_failed: {expose_exc}"
+        return jsonify(response_payload)
+        # cleanup is handled inside generate_kql
 
     except Exception as e:
         error_msg = str(e)
@@ -2384,7 +2369,7 @@ def _execute_kql_query(query: str):
         return {"success": False, "error": innermost_error}
 
 
-@app.route("/api/evaluate-query", methods=["POST"])
+@app.route("/api/generate_and_evaluate_query", methods=["POST"])
 def evaluate_query():
     """Evaluate a generated query against an expected query.
 
@@ -2423,12 +2408,16 @@ def evaluate_query():
 
         data = request.get_json()
         prompt = data.get("prompt", "").strip()
-        generated_query = data.get("generated_query", "").strip()
+        generated_query = data.get("generated_query")
+        if isinstance(generated_query, str):
+            generated_query = generated_query.strip()
         expected_query = data.get("expected_query", "").strip()
         model = data.get("model")  # Optional model override
         system_prompt = data.get("system_prompt")  # Optional system prompt override
 
-        # Set overrides if provided
+        # Set overrides if provided (kept for backward compatibility; main orchestration
+        # applies overrides too). We'll still set them here to ensure older code paths
+        # are supported during transition.
         from azure_openai_utils import clear_model_override, set_model_override
         from prompt_builder import (clear_system_prompt_override,
                                     set_system_prompt_override)
@@ -2437,15 +2426,11 @@ def evaluate_query():
             set_model_override(model)
         if system_prompt:
             set_system_prompt_override(system_prompt)
-        if model:
-            set_model_override(model)
 
+        # If caller did not supply a generated query, let the shared orchestrator
+        # perform generation so the server and run_batch use identical code paths.
         if not generated_query:
-            clear_model_override()
-            return (
-                jsonify({"success": False, "error": "Generated query is required"}),
-                400,
-            )
+            generated_query = None
         if not expected_query:
             clear_model_override()
             return (
@@ -2453,153 +2438,56 @@ def evaluate_query():
                 400,
             )
 
-        # Execute generated query
-        gen_result = _execute_kql_query(generated_query)
+        # Use the shared helper to evaluate this single prompt case so behavior
+        # is identical to `run_batch`. If `generated_query` was provided, pass it
+        # through the case to avoid re-generating; otherwise let the helper
+        # generate it.
+        from utils.batch_runner import generate_and_evaluate_query
 
-        if not gen_result["success"]:
-            # Generated query failed
-            return jsonify(
-                {
-                    "success": True,
-                    "execution_success": False,
-                    "generated_error": gen_result["error"],
-                    "generated_exec_stats": gen_result.get("exec_stats"),
-                    "expected_error": None,
-                    "score": None,
-                }
-            )
-
-        # Execute expected query
-        exp_result = _execute_kql_query(expected_query)
-
-        if not exp_result["success"]:
-            # Expected query failed (this shouldn't normally happen)
-            return jsonify(
-                {
-                    "success": True,
-                    "execution_success": False,
-                    "generated_error": None,
-                    "generated_exec_stats": gen_result.get("exec_stats"),
-                    "expected_error": exp_result["error"],
-                    "expected_exec_stats": exp_result.get("exec_stats"),
-                    "score": None,
-                }
-            )
-
-        # Both queries succeeded - extract results for comparison
-        gen_tables = gen_result["tables"]
-        exp_tables = exp_result["tables"]
-
-        # Use first table from each result (standard case)
-        gen_table = gen_tables[0] if gen_tables else {"columns": [], "rows": []}
-        exp_table = exp_tables[0] if exp_tables else {"columns": [], "rows": []}
-
-        gen_columns = gen_table.get("columns", [])
-        exp_columns = exp_table.get("columns", [])
-        gen_rows = gen_table.get("rows", [])
-        exp_rows = exp_table.get("rows", [])
-
-        # Convert rows to list of dicts for scoring
-        gen_results = []
-        for row in gen_rows:
-            obj = {}
-            for idx, col in enumerate(gen_columns):
-                if idx < len(row):
-                    obj[col] = row[idx]
-            gen_results.append(obj)
-
-        exp_results = []
-        for row in exp_rows:
-            obj = {}
-            for idx, col in enumerate(exp_columns):
-                if idx < len(row):
-                    obj[col] = row[idx]
-            exp_results.append(obj)
-
-        # Calculate score with ALL rows (no limit)
-        from query_scorer import calculate_total_score
-
-        score_result = calculate_total_score(
-            generated_kql=generated_query,
-            expected_kql=expected_query,
-            generated_columns=gen_columns,
-            expected_columns=exp_columns,
-            generated_results=gen_results,
-            expected_results=exp_results,
-            prompt=prompt,
+        case = {"id": None, "prompt": prompt, "expected_query": expected_query}
+        if generated_query:
+            case["generated_query"] = generated_query
+        res = generate_and_evaluate_query(
+            case, agent=agent, execute=True, model=model, system_prompt=system_prompt
         )
 
-        # Canonicalize score_result to Pattern 1
-        try:
-            orig_score = score_result or {}
-            qsim = None
-            if "query_similarity" in orig_score:
-                try:
-                    qsim = float(orig_score.get("query_similarity"))
-                except Exception:
-                    qsim = None
-            rmatch = None
-            if "results_match" in orig_score:
-                try:
-                    rmatch = float(orig_score.get("results_match"))
-                except Exception:
-                    rmatch = None
-            comps = orig_score.get("components") or {}
-            if rmatch is None and isinstance(comps, dict):
-                rm = comps.get("results_match")
-                if isinstance(rm, dict) and "score" in rm:
-                    try:
-                        rmatch = float(rm.get("score"))
-                    except Exception:
-                        rmatch = None
-            if qsim is None:
-                qsim = float(orig_score.get("query_similarity") or 0.5)
-            if rmatch is None:
-                rmatch = float(orig_score.get("results_match") or 0.0)
+        # Map helper result to API shape. Do not infer execution success only from
+        # helper `status` (which is a generic flow indicator). Instead inspect
+        # returned exec stats and any `error` on the generated_query object so
+        # the API accurately reflects query execution failures.
+        gen_q = res.get("generated_query")
+        gen_exec_stats = res.get("returned_exec_stats") or {}
+        exp_exec_stats = res.get("expected_exec_stats") or {}
 
-            normalized_components = {
-                "query_similarity": {
-                    "score": round(float(qsim), 3),
-                    "weight": 0.5,
-                    "weighted_score": round(float(qsim) * 0.5, 3),
-                },
-                "results_match": {
-                    "score": round(float(rmatch), 3),
-                    "weight": 0.5,
-                    "weighted_score": round(float(rmatch) * 0.5, 3),
-                    "components": {
-                        "schema_match": {
-                            "score": round(
-                                float(orig_score.get("schema_match") or 0.0), 3
-                            )
-                        },
-                        "rows_match": {
-                            "score": round(
-                                float(orig_score.get("rows_match") or 0.0), 3
-                            )
-                        },
-                    },
-                },
-            }
-            canonical_score = {
-                "query_similarity": round(float(qsim), 3),
-                "results_match": round(float(rmatch), 3),
-                "components": normalized_components,
-            }
-        except Exception:
-            canonical_score = score_result
+        # Detect generated execution error
+        gen_err = None
+        if isinstance(gen_q, dict):
+            # generated_query may be an object with error/kql_query/message fields
+            gen_err = gen_q.get("error") or gen_q.get("message")
+
+        # Also check exec_stats for error indicator
+        if not gen_err and isinstance(gen_exec_stats, dict):
+            gen_err = gen_exec_stats.get("error") or gen_exec_stats.get("message")
+
+        # Detect expected execution error
+        exp_err = None
+        if isinstance(exp_exec_stats, dict):
+            exp_err = exp_exec_stats.get("error") or exp_exec_stats.get("message")
+
+        execution_success = gen_err is None and exp_err is None
 
         return jsonify(
-                {
-                    "success": True,
-                    "execution_success": True,
-                    "generated_error": None,
-                    "expected_error": None,
-                    "generated_exec_stats": gen_result.get("exec_stats"),
-                    "expected_exec_stats": exp_result.get("exec_stats"),
-                    "score": canonical_score,
-                }
-            )
+            {
+                "success": True,
+                "execution_success": execution_success,
+                "generated_error": gen_err,
+                "expected_error": exp_err,
+                "generated_query": res.get("generated_query"),
+                "generated_exec_stats": gen_exec_stats,
+                "expected_exec_stats": exp_exec_stats,
+                "score": res.get("score"),
+            }
+        )
 
     except Exception as e:
         from azure_openai_utils import clear_model_override
@@ -2805,10 +2693,24 @@ def batch_run_endpoint():
         if not prompts:
             return jsonify({"success": False, "error": "No prompts provided"}), 400
 
+        # Decide which agent to pass to the runner. We require an explicit
+        # agent instance; if the global `agent` is not initialized (e.g. in
+        # tests or lightweight scenarios), provide a minimal DummyAgent that
+        # mirrors the previous fallback behavior but is explicit to this
+        # endpoint.
+        if agent:
+            agent_to_use = agent
+        else:
+            class DummyAgentLocal:
+                def process_natural_language(self, prompt: str):
+                    return f"KQL: {prompt}"
+
+            agent_to_use = DummyAgentLocal()
+
         # Run the batch using shared runner
         results = run_batch(
             prompts,
-            agent=agent or None,
+            agent=agent_to_use,
             execute=execute_flag,
             stop_on_critical_error=stop_on_critical,
         )
