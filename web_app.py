@@ -51,8 +51,30 @@ from utils.batch_runner import run_batch
 from utils.report_builder import build_excel, build_json
 
 app = Flask(__name__)
+# Disable template caching for development
+app.config['TEMPLATES_AUTO_RELOAD'] = True
+app.config['SEND_FILE_MAX_AGE_DEFAULT'] = 0
 # Ensure workspace_id is defined before any early cache load attempts to avoid NameError
 workspace_id = None
+
+# Helper function to extract user token from Azure AD authentication headers
+def get_user_token():
+    """Extract access token from Azure AD Easy Auth headers.
+    
+    When Azure App Service Easy Auth is enabled, it adds headers with user info:
+    - X-MS-TOKEN-AAD-ACCESS-TOKEN: The user's access token for Azure AD resources
+    
+    Returns:
+        str or None: The access token if available, None otherwise
+    """
+    # Azure App Service Easy Auth provides the token in this header
+    token = request.headers.get('X-MS-TOKEN-AAD-ACCESS-TOKEN')
+    if token:
+        print(f"[Auth] ✅ Using authenticated user's token (length: {len(token)})")
+    else:
+        print(f"[Auth] ⚠️ No user token found in headers. Available headers: {list(request.headers.keys())}")
+        print(f"[Auth] ⚠️ Azure AD auth might not be configured or user not logged in")
+    return token
 
 # Legacy compatibility globals (removed caching logic, retained empty structures for tests/UI expecting them)
 _workspace_schema_cache = {}
@@ -87,18 +109,12 @@ DOCS_META_MAX_SECONDS = float(
     os.environ.get("DOCS_META_MAX_SECONDS", "10")
 )  # cumulative time budget for metadata enrichment (raised from 4s to 10s)
 # Removed legacy refresh flags and lock (stateless schema fetch)
-DOCS_ENRICH_MAX_TABLES = int(
-    os.environ.get("DOCS_ENRICH_MAX_TABLES", "8")
-)  # cap number of unmatched tables to enrich per request
-DOCS_ENRICH_MAX_SECONDS = float(
-    os.environ.get("DOCS_ENRICH_MAX_SECONDS", "5")
-)  # cumulative time budget per request
-DOCS_ENRICH_COLUMN_FETCH = bool(
-    os.environ.get("DOCS_ENRICH_COLUMN_FETCH", "1")
-)  # allow disabling column scraping (heavier)
-DISABLE_SCHEMA_FETCH = bool(
-    os.environ.get("DISABLE_SCHEMA_FETCH")
-)  # Disable all schema and table queries fetching on workspace connect
+DOCS_ENRICH_MAX_TABLES = int(os.environ.get("DOCS_ENRICH_MAX_TABLES", "8"))  # cap number of unmatched tables to enrich per request
+DOCS_ENRICH_MAX_SECONDS = float(os.environ.get("DOCS_ENRICH_MAX_SECONDS", "5"))  # cumulative time budget per request
+DOCS_ENRICH_COLUMN_FETCH = bool(os.environ.get("DOCS_ENRICH_COLUMN_FETCH", "1"))  # allow disabling column scraping (heavier)
+# Fix: Properly parse "1" as True
+DISABLE_SCHEMA_FETCH = os.environ.get("DISABLE_SCHEMA_FETCH", "0") in ("1", "true", "True", "TRUE", "yes")
+print(f"[Config] DISABLE_SCHEMA_FETCH={DISABLE_SCHEMA_FETCH} (raw value: {os.environ.get('DISABLE_SCHEMA_FETCH', 'not set')})")
 
 
 # Generic examples fallback
@@ -863,11 +879,12 @@ def workspace_schema_status():
 
     Returns JSON:
       success: bool
-      status: 'uninitialized' | 'ready' | 'empty' | 'disabled'
+      status: 'uninitialized' | 'ready' | 'empty' | 'disabled' | 'query-only'
       workspace_id: str|None
       table_count: int
       retrieved_at: str|None
       source: str|None
+      message: str (optional, for empty/query-only status)
     """
     global workspace_id
     if not workspace_id:
@@ -894,31 +911,30 @@ def workspace_schema_status():
             }
         )
     result = get_workspace_schema(workspace_id)
-    if result.get("error"):
-        return jsonify(
-            {
-                "success": False,
-                "status": "error",
-                "workspace_id": workspace_id,
-                "error": result.get("error"),
-                "table_count": 0,
-                "retrieved_at": None,
-                "source": None,
-            }
-        )
-    tables = result.get("tables", [])
-    status = "ready" if tables else "empty"
-    return jsonify(
-        {
-            "success": True,
-            "status": status,
-            "workspace_id": workspace_id,
-            "table_count": len(tables),
-            "retrieved_at": result.get("retrieved_at"),
-            "source": result.get("source"),
-        }
-    )
-
+    if result.get('error'):
+        return jsonify({'success': False, 'status': 'error', 'workspace_id': workspace_id, 'error': result.get('error'), 'table_count': 0, 'retrieved_at': None, 'source': None})
+    tables = result.get('tables', [])
+    
+    # If no tables found, return query-only status (app still works for queries)
+    if not tables:
+        return jsonify({
+            'success': True,
+            'status': 'query-only',
+            'workspace_id': workspace_id,
+            'table_count': 0,
+            'retrieved_at': result.get('retrieved_at'),
+            'source': result.get('source'),
+            'message': 'Table discovery unavailable. You can still run KQL queries by typing them directly.'
+        })
+    
+    return jsonify({
+        'success': True,
+        'status': 'ready',
+        'workspace_id': workspace_id,
+        'table_count': len(tables),
+        'retrieved_at': result.get('retrieved_at'),
+        'source': result.get('source')
+    })
 
 # ---------------------------------------------------------------------------
 # Compatibility workspace schema endpoint (previously removed). Front-end and
@@ -1710,10 +1726,13 @@ def setup_workspace():
         workspace_id = data.get("workspace_id", "").strip()
 
         if not workspace_id:
-            return jsonify({"success": False, "error": "Workspace ID is required"})
-
-        # Initialize agent
-        agent = KQLAgent(workspace_id)
+            return jsonify({'success': False, 'error': 'Workspace ID is required'})
+        
+        # Get user token from Azure AD authentication if available
+        user_token = get_user_token()
+        
+        # Initialize agent with optional user token
+        agent = KQLAgent(workspace_id, user_token=user_token)
         # Intentionally do NOT start schema fetch here to allow client to trigger and observe pending state
         print(
             "[Setup] Workspace initialized; schema fetch will start on first /api/workspace-schema request."

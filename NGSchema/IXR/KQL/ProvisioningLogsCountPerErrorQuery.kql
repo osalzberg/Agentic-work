@@ -1,4 +1,0 @@
-AADProvisioningLogs
-| where ResultType == "Failure"
-| summarize Occurrences=count(), LastSeen=max(TimeGenerated) by ResultSignature
-| order by LastSeen

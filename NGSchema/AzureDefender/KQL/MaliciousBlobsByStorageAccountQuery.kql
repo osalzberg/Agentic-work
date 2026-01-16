@@ -1,3 +1,0 @@
-StorageMalwareScanningResults
-| where ScanResultType == "Malicious"
-| summarize BlobUris = make_list(BlobUri), count() by StorageAccountName

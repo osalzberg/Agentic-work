@@ -1,3 +1,0 @@
-AHDSDicomDiagnosticLogs
-| where Message startswith "DICOM100:"
-| summarize Count = count() by CorrelationId

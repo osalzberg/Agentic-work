@@ -1,3 +1,0 @@
-AZFWNetworkRule
-| union AZFWApplicationRule, AZFWNatRule, AZFWThreatIntel, AZFWIdpsSignature
-| take 100

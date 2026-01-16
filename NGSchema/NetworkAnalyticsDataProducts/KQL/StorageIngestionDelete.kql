@@ -1,3 +1,0 @@
-AOIStorage
-| where Category has_cs "IngestionDelete"
-| take 100

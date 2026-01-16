@@ -1,3 +1,0 @@
-RetinaNetworkFlowLogs
-| where Verdict == "DROPPED"
-| limit 100

@@ -1,3 +1,0 @@
-AggregatedSecurityAlert
-| extend SectorName = extract_json("$.SectorName", PartenerMetadata, typeof(string))
-| summarize by SectorName

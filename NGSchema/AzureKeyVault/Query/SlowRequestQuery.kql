@@ -1,4 +1,0 @@
-let threshold=1000;
-AZKVAuditLogs
-| where DurationMs > threshold
-| summarize count() by OperationName, _ResourceId

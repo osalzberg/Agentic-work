@@ -1,5 +1,0 @@
-AADServicePrincipalSignInLogs
-| where TimeGenerated > ago(1d)
-| summarize CountPerServicePrincipal = count() by ServicePrincipalId
-| order by CountPerServicePrincipal desc
-| take 100

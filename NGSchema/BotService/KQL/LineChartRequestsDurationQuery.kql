@@ -1,4 +1,0 @@
-// This query displays a Line Chart showing requests response duration per operation.
-ABSBotRequests
-| summarize DurationMs = avg(DurationMs)  by bin(TimeGenerated, 5m), OperationName
-| render timechart

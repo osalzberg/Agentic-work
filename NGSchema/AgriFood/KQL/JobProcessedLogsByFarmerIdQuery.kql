@@ -1,2 +1,0 @@
-AgriFoodJobProcessedLogs
-| summarize Count = count() by FarmerId, ResultType, OperationName

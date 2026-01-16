@@ -1,6 +1,0 @@
-source
-| extend TimeGenerated =  todatetime(finding.eventTime)
-| extend Findings = todynamic(finding)
-| extend Resource = todynamic(resource)
-| extend SourceProperties = todynamic(sourceProperties)
-| project TimeGenerated,Findings,FindingsResource = Resource,SourceProperties

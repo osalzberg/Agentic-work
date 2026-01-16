@@ -1,4 +1,0 @@
-AGSGrafanaLoginEvents
-| where Level == "Error"
-| sort by TimeGenerated asc
-| take 100

@@ -1,4 +1,0 @@
-AppServiceAuthenticationLogs
-| where TaskName == "MiddlewareError"
-| sort by TimeGenerated desc
-| take 100

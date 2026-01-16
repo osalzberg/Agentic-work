@@ -1,4 +1,0 @@
-AZKVAuditLogs
-| where TimeGenerated > ago(30d)
-| where OperationName == "VaultPut" or OperationName == "VaultPatch"
-| sort by TimeGenerated desc

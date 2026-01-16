@@ -1,3 +1,0 @@
-AGCAccessLogs
-| summarize AggregatedValue = count() by bin(TimeGenerated, 1h), _ResourceId
-| render timechart

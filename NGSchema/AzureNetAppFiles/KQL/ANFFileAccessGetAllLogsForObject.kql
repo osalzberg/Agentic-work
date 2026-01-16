@@ -1,4 +1,0 @@
-ANFFileAccess
-| where ObjectName == "/auditlog.txt"
-| sort by TimeGenerated desc
-| limit 100

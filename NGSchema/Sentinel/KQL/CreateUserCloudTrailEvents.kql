@@ -1,3 +1,0 @@
-AWSCloudTrail
-| where EventName == "CreateUser"
-| summarize count() by AWSRegion

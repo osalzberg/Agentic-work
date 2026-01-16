@@ -1,7 +1,0 @@
-source
-| extend properties = parse_json(properties)
-| project
-    TimeGenerated = todatetime(['time']),
-    OperationName = operationName,
-    Category = category,
-    ProvisioningState = tostring(properties.provisioningState)

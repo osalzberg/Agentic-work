@@ -1,3 +1,0 @@
-AFDAccessLog 
-| summarize RequestCount = count() by bin(TimeGenerated, 1h), _ResourceId 
-| render timechart  

@@ -1,7 +1,0 @@
-T
-| invoke _ASIM_ResolveFQDN (field)
-| project-rename 
-    SrcHostname = ExtractedHostname,
-    SrcDomain = Domain,
-    SrcFQDN = FQDN,
-    SrcDomainType = DomainType
