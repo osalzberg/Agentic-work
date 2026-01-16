@@ -28,9 +28,7 @@ jobs:
     - name: Prepare package (zip)
       run: |
         mkdir -p deploy_package
-        cp -r . deploy_package/app
-        # Optionally install to a local target if needed
-        # pip install -r requirements.txt -t deploy_package/app
+        tar --exclude='./deploy_package' -C . -cf - . | (cd deploy_package && tar -xf -)
         cd deploy_package
         zip -r ../package.zip .
           
