@@ -14,18 +14,31 @@ jobs:
     runs-on: ubuntu-latest
     
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v4
 
-    - name: Set up Python version
-      uses: actions/setup-python@v1
+    - name: Set up Python
+      uses: actions/setup-python@v4
       with:
         python-version: '3.12'
-    
-    - name: Build using AppService-Build
-      uses: azure/appservice-build@v2
-      with:
-        platform: python
-        platform-version: '3.12'
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+
+    - name: Prepare package (zip)
+      run: |
+        mkdir -p deploy_package
+        cp -r . deploy_package/app
+        # Optionally install to a local target if needed
+        # pip install -r requirements.txt -t deploy_package/app
+        cd deploy_package
+        zip -r ../package.zip .
+          
+    # - name: Build using AppService-Build
+      # uses: azure/appservice-build@v2
+      # with:
+        # platform: python
+        # platform-version: '3.12'
     
     - name: 'Deploy to Azure Web App'
       uses: azure/webapps-deploy@v2
@@ -33,3 +46,4 @@ jobs:
         app-name: 'azmon-logs-agent-oren'
         slot-name: 'production'
         publish-profile: ${{ secrets.AzureAppService_PublishProfile_0cf65b5712b0465dba271ac2eb14af8d }}
+        package: package.zip
