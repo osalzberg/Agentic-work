@@ -40,6 +40,7 @@ jobs:
     - name: Disable server build on App Service (disable Oryx)
       run: |
         az webapp config appsettings set \
+          --resource-group "azmon-logs-agent-oren" \
           --name "azmon-logs-agent-oren" \
           --settings SCM_DO_BUILD_DURING_DEPLOYMENT=false
             
