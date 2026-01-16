@@ -37,7 +37,12 @@ jobs:
       # with:
         # platform: python
         # platform-version: '3.12'
-    
+    - name: Disable server build on App Service (disable Oryx)
+      run: |
+        az webapp config appsettings set \
+          --name "azmon-logs-agent-oren" \
+          --settings SCM_DO_BUILD_DURING_DEPLOYMENT=false
+            
     - name: 'Deploy to Azure Web App'
       uses: azure/webapps-deploy@v2
       with: 
