@@ -21,7 +21,14 @@ def explain_kql(kql: str) -> str:
             "covering: source table, filters, selected/derived columns, aggregations + grouping, ordering, and limits. "
             "Prefer readable paraphrase over verbatim code. No code fences. Max 3 short sentences."
         )
-        res = client.explain(system_prompt=system, summary=kql, max_tokens=400, temperature=0.2, top_p=0.9, allow_escalation=True)
+        res = client.explain(
+            system_prompt=system,
+            summary=kql,
+            max_tokens=400,
+            temperature=0.2,
+            top_p=0.9,
+            allow_escalation=True,
+        )
         return (res.content or "").strip()
     except Exception:
         return ""
@@ -31,9 +38,9 @@ def grade_kql_similarity(expected_kql: str, generated_kql: str) -> float | None:
     """Grade the semantic similarity between two KQL queries using LLM.
 
     Asks the LLM to compare the queries and return a similarity score from 0.0 (completely different)
-    to 1.0 (identical), while ignoring differences in column names created by projections, 
+    to 1.0 (identical), while ignoring differences in column names created by projections,
     aggregations, or alias assignments.
-    
+
     Returns:
         float: Similarity score between 0.0 and 1.0, or None if grading fails
     """
@@ -41,7 +48,7 @@ def grade_kql_similarity(expected_kql: str, generated_kql: str) -> float | None:
         return None
     if not generated_kql or not generated_kql.strip():
         return None
-    
+
     try:
         client = OpenAIClient()
         system = (
@@ -62,12 +69,19 @@ def grade_kql_similarity(expected_kql: str, generated_kql: str) -> float | None:
             "\n"
             "Return ONLY a single decimal number between 0.0 and 1.0, nothing else."
         )
-        
+
         prompt = f"Expected query:\n{expected_kql}\n\nGenerated query:\n{generated_kql}\n\nSimilarity score:"
-        
-        res = client.explain(system_prompt=system, summary=prompt, max_tokens=500, temperature=0.0, top_p=0.9, allow_escalation=True)
+
+        res = client.explain(
+            system_prompt=system,
+            summary=prompt,
+            max_tokens=500,
+            temperature=0.0,
+            top_p=0.9,
+            allow_escalation=True,
+        )
         content = (res.content or "").strip()
-        
+
         # Parse the score
         try:
             score = float(content)
@@ -76,7 +90,7 @@ def grade_kql_similarity(expected_kql: str, generated_kql: str) -> float | None:
         except ValueError:
             print(f"[LLM Grading] Failed to parse score from response: {content}")
             return None
-            
+
     except Exception as e:
         print(f"[LLM Grading] Exception during grading: {type(e).__name__}: {e}")
         return None

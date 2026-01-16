@@ -3,23 +3,27 @@
 Startup script for KQL servers
 """
 
-import click
+import os
 import subprocess
 import sys
-import os
+
+import click
 
 # Optional imports for embedding index maintenance
 try:
-    from embedding_index import build_domain_index, load_or_build_domain_index  # type: ignore
+    from embedding_index import build_domain_index  # type: ignore
+    from embedding_index import load_or_build_domain_index
 except Exception:
     build_domain_index = None  # type: ignore
     load_or_build_domain_index = None  # type: ignore
 
-def _collect_container_public_shots() -> list[dict[str,str]]:
+
+def _collect_container_public_shots() -> list[dict[str, str]]:
     """Load container public shots."""
     csv_path = os.path.join(os.getcwd(), "containers_capsule", "public_shots.csv")
     import csv
-    out: list[dict[str,str]] = []
+
+    out: list[dict[str, str]] = []
     if not os.path.exists(csv_path):
         print(f"[collect-container] warning: CSV not found at {csv_path}")
         return out
@@ -27,7 +31,7 @@ def _collect_container_public_shots() -> list[dict[str,str]]:
         with open(csv_path, "r", encoding="utf-8") as f:
             reader = csv.reader(f)
             header = next(reader, None)
-            has_header = header and {h.lower() for h in header} >= {"prompt","query"}
+            has_header = header and {h.lower() for h in header} >= {"prompt", "query"}
             if not has_header and header:
                 f.seek(0)
                 reader = csv.reader(f)
@@ -35,7 +39,7 @@ def _collect_container_public_shots() -> list[dict[str,str]]:
                 if len(row) < 2:
                     continue
                 prompt = row[0].strip()
-                query = row[1].strip().replace('""','"')
+                query = row[1].strip().replace('""', '"')
                 if prompt and query:
                     out.append({"question": prompt, "kql": query})
     except Exception as e:
@@ -51,7 +55,8 @@ def _collect_container_public_shots() -> list[dict[str,str]]:
     print(f"[collect-container] loaded_csv examples={len(out)} deduped={len(deduped)}")
     return deduped
 
-def _collect_appinsights_examples() -> list[dict[str,str]]:
+
+def _collect_appinsights_examples() -> list[dict[str, str]]:
     """Aggregate Application Insights domain examples across known files."""
     base = os.path.join(os.getcwd(), "app_insights_capsule", "kql_examples")
     files = [
@@ -62,7 +67,8 @@ def _collect_appinsights_examples() -> list[dict[str,str]]:
         "app_performance_kql_examples.md",
     ]
     import re
-    examples: list[dict[str,str]] = []
+
+    examples: list[dict[str, str]] = []
     for fname in files:
         path = os.path.join(base, fname)
         if not os.path.exists(path):
@@ -77,10 +83,12 @@ def _collect_appinsights_examples() -> list[dict[str,str]]:
             examples.append({"question": q.strip(), "kql": kql.strip()})
     return examples
 
+
 @click.group()
 def cli():
     """KQL Server Management"""
     pass
+
 
 @cli.command()
 def http():
@@ -91,11 +99,12 @@ def http():
     click.echo("  GET /health - Health check")
     click.echo()
     click.echo("Press Ctrl+C to stop the server")
-    
+
     try:
         subprocess.run([sys.executable, "my-first-mcp-server/rest_api.py"])
     except KeyboardInterrupt:
         click.echo("\n🛑 HTTP Server stopped")
+
 
 @cli.command()
 def mcp():
@@ -107,15 +116,18 @@ def mcp():
     click.echo("  - validate_workspace_connection: Test connections")
     click.echo()
     click.echo("To integrate with Claude Desktop, add this to your config.json:")
-    config_path = os.path.join(os.getcwd(), "my-first-mcp-server", "claude_desktop_config.json")
+    config_path = os.path.join(
+        os.getcwd(), "my-first-mcp-server", "claude_desktop_config.json"
+    )
     click.echo(f"Config file: {config_path}")
     click.echo()
     click.echo("Press Ctrl+C to stop the server")
-    
+
     try:
         subprocess.run([sys.executable, "my-first-mcp-server/mcp_server.py"])
     except KeyboardInterrupt:
         click.echo("\n🛑 MCP Server stopped")
+
 
 @cli.command()
 def test():
@@ -126,16 +138,18 @@ def test():
     except Exception as e:
         click.echo(f"❌ Test failed: {e}")
 
+
 @cli.command()
 def test_translation():
     """Test and compare translation methods"""
     click.echo("🧪 Testing NL to KQL Translation")
     click.echo("This will test the consistency of natural language translation")
-    
+
     try:
         subprocess.run([sys.executable, "test_comparison.py"])
     except Exception as e:
         click.echo(f"❌ Test failed: {e}")
+
 
 @cli.command()
 def client():
@@ -145,6 +159,7 @@ def client():
         subprocess.run([sys.executable, "kql_client.py"])
     except Exception as e:
         click.echo(f"❌ Client failed: {e}")
+
 
 @cli.command()
 def agent():
@@ -156,13 +171,14 @@ def agent():
     click.echo("  - Test workspace connections")
     click.echo("  - Execute queries and format results")
     click.echo()
-    
+
     try:
         subprocess.run([sys.executable, "logs_agent.py"])
     except KeyboardInterrupt:
         click.echo("\n🛑 Agent stopped")
     except Exception as e:
         click.echo(f"❌ Agent failed: {e}")
+
 
 @cli.command()
 def setup():
@@ -172,6 +188,7 @@ def setup():
         subprocess.run([sys.executable, "setup_azure_openai.py"])
     except Exception as e:
         click.echo(f"❌ Setup failed: {e}")
+
 
 @cli.command()
 def web():
@@ -188,7 +205,7 @@ def web():
     click.echo("🤖 Ready to process natural language KQL questions!")
     click.echo()
     click.echo("Press Ctrl+C to stop the server")
-    
+
     try:
         subprocess.run([sys.executable, "web_app.py"])
     except KeyboardInterrupt:
@@ -196,8 +213,14 @@ def web():
     except Exception as e:
         click.echo(f"❌ Web Interface failed: {e}")
 
+
 @cli.command("embed-index-purge")
-@click.option("--domain", type=click.Choice(["containers","appinsights","all"]), default="all", help="Domain to purge or 'all'.")
+@click.option(
+    "--domain",
+    type=click.Choice(["containers", "appinsights", "all"]),
+    default="all",
+    help="Domain to purge or 'all'.",
+)
 def embed_index_purge(domain: str):
     """Delete persistent embedding index files (containers/appinsights/all)."""
     index_dir = os.environ.get("EMBED_INDEX_DIR", "embedding_index")
@@ -205,10 +228,14 @@ def embed_index_purge(domain: str):
         click.echo(f"ℹ️ Index directory '{index_dir}' does not exist; nothing to purge.")
         return
     targets = []
-    if domain in ("containers","all"):
-        targets.append(os.path.join(index_dir, "domain_containers_embedding_index.json"))
-    if domain in ("appinsights","all"):
-        targets.append(os.path.join(index_dir, "domain_appinsights_embedding_index.json"))
+    if domain in ("containers", "all"):
+        targets.append(
+            os.path.join(index_dir, "domain_containers_embedding_index.json")
+        )
+    if domain in ("appinsights", "all"):
+        targets.append(
+            os.path.join(index_dir, "domain_appinsights_embedding_index.json")
+        )
     removed = 0
     for t in targets:
         if os.path.exists(t):
@@ -223,33 +250,50 @@ def embed_index_purge(domain: str):
     else:
         click.echo(f"✅ Purge complete. Removed {removed} file(s).")
 
+
 @cli.command("embed-index-rebuild")
-@click.option("--domain", type=click.Choice(["containers","appinsights","all"]), default="all", help="Domain to rebuild or 'all'.")
+@click.option(
+    "--domain",
+    type=click.Choice(["containers", "appinsights", "all"]),
+    default="all",
+    help="Domain to rebuild or 'all'.",
+)
 def embed_index_rebuild(domain: str):
     """Force rebuild of embedding index for selected domain(s)."""
     if not build_domain_index:
         click.echo("❌ embedding_index module unavailable; rebuild not possible.")
         return
     total = 0
-    if domain in ("containers","all"):
+    if domain in ("containers", "all"):
         container_public_shots = _collect_container_public_shots()
         if not container_public_shots:
-            click.echo("⚠️ Containers CSV missing or empty; building an empty containers index (no examples).")
-        print(f"---------------- [embed-index] building containers index with: {container_public_shots} examples")
+            click.echo(
+                "⚠️ Containers CSV missing or empty; building an empty containers index (no examples)."
+            )
+        print(
+            f"---------------- [embed-index] building containers index with: {container_public_shots} examples"
+        )
         build_domain_index("containers", container_public_shots)
-        click.echo(f"🔄 Rebuilt containers index with {len(container_public_shots)} examples (empty OK).")
+        click.echo(
+            f"🔄 Rebuilt containers index with {len(container_public_shots)} examples (empty OK)."
+        )
         total += 1
-    if domain in ("appinsights","all"):
+    if domain in ("appinsights", "all"):
         ex_app = _collect_appinsights_examples()
         if not ex_app:
-            click.echo("⚠️ AppInsights examples missing or empty; building an empty appinsights index (no examples).")
+            click.echo(
+                "⚠️ AppInsights examples missing or empty; building an empty appinsights index (no examples)."
+            )
         build_domain_index("appinsights", ex_app)
-        click.echo(f"🔄 Rebuilt appinsights index with {len(ex_app)} examples (empty OK).")
+        click.echo(
+            f"🔄 Rebuilt appinsights index with {len(ex_app)} examples (empty OK)."
+        )
         total += 1
     if total == 0:
         click.echo("ℹ️ No domains processed.")
     else:
         click.echo("✅ Rebuild complete.")
+
 
 if __name__ == "__main__":
     cli()

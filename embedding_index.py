@@ -28,30 +28,36 @@ Public API:
 
 This module is intentionally lightweight; concurrency concerns handled by atomic temp file rename.
 """
+
 from __future__ import annotations
-import os
-import json
-import time
+
 import hashlib
-from typing import List, Dict, Optional, Tuple
+import json
+import os
+import time
 from datetime import datetime, timezone
+from typing import Dict, List, Optional, Tuple
 
 from azure_openai_utils import create_embeddings, load_config  # type: ignore
 
 SCHEMA_VERSION = 1
+
 
 def _index_dir() -> str:
     d = os.environ.get("EMBED_INDEX_DIR", "embedding_index")
     os.makedirs(d, exist_ok=True)
     return d
 
+
 def _index_path(domain: str) -> str:
     safe = domain.replace("/", "_")
     return os.path.join(_index_dir(), f"domain_{safe}_embedding_index.json")
 
+
 # --------------------- Hash & Dirty Detection --------------------- #
 
-def _examples_hash(examples: List[Dict[str,str]]) -> str:
+
+def _examples_hash(examples: List[Dict[str, str]]) -> str:
     h = hashlib.sha256()
     for ex in examples:
         q = ex.get("question", "").strip()
@@ -62,9 +68,11 @@ def _examples_hash(examples: List[Dict[str,str]]) -> str:
         h.update(b"\n")
     return h.hexdigest()[:32]
 
+
 # --------------------- Index Build --------------------- #
 
-def build_domain_index(domain: str, public_shots: List[Dict[str,str]]) -> Dict:
+
+def build_domain_index(domain: str, public_shots: List[Dict[str, str]]) -> Dict:
     questions = [shot.get("question", "") for shot in public_shots]
     print(f"[embed-index] building domain={domain}")
     if not questions:
@@ -76,7 +84,7 @@ def build_domain_index(domain: str, public_shots: List[Dict[str,str]]) -> Dict:
             "embedding_deployment": None,
             "vector_dim": 0,
             "examples_hash": _examples_hash(public_shots),
-            "examples": []
+            "examples": [],
         }
     cfg = load_config()
     vectors = create_embeddings(questions)
@@ -92,27 +100,35 @@ def build_domain_index(domain: str, public_shots: List[Dict[str,str]]) -> Dict:
         "embedding_deployment": cfg.embedding_deployment,
         "vector_dim": dim,
         "examples_hash": examples_hash,
-        "examples": []
+        "examples": [],
     }
     for i, ex in enumerate(public_shots):
-        payload["examples"].append({
-            "id": i,
-            "question": ex.get("question", ""),
-            "kql": ex.get("kql", ""),
-            "question_hash": hashlib.sha256(ex.get("question", "").encode("utf-8")).hexdigest()[:16],
-            "vector": vectors[i] if i < len(vectors) else []
-        })
+        payload["examples"].append(
+            {
+                "id": i,
+                "question": ex.get("question", ""),
+                "kql": ex.get("kql", ""),
+                "question_hash": hashlib.sha256(
+                    ex.get("question", "").encode("utf-8")
+                ).hexdigest()[:16],
+                "vector": vectors[i] if i < len(vectors) else [],
+            }
+        )
     tmp_path = _index_path(domain) + ".tmp"
     final_path = _index_path(domain)
     with open(tmp_path, "w", encoding="utf-8") as f:
         json.dump(payload, f)
     os.replace(tmp_path, final_path)
-    print(f"[embed-index] built domain={domain} examples={len(public_shots)} dim={dim} path={final_path}")
+    print(
+        f"[embed-index] built domain={domain} examples={len(public_shots)} dim={dim} path={final_path}"
+    )
     return payload
+
 
 # --------------------- Load or Build --------------------- #
 
-def load_or_build_domain_index(domain: str, public_shots: List[Dict[str,str]]) -> Dict:
+
+def load_or_build_domain_index(domain: str, public_shots: List[Dict[str, str]]) -> Dict:
     path = _index_path(domain)
     force = os.environ.get("EMBED_INDEX_FORCE_REBUILD", "0") == "1"
     current_hash = _examples_hash(public_shots)
@@ -125,7 +141,9 @@ def load_or_build_domain_index(domain: str, public_shots: List[Dict[str,str]]) -
         with open(path, "r", encoding="utf-8") as f:
             data = json.load(f)
     except Exception as e:
-        print(f"[embed-index] corrupt or unreadable index; rebuilding domain={domain} err={e}")
+        print(
+            f"[embed-index] corrupt or unreadable index; rebuilding domain={domain} err={e}"
+        )
         return build_domain_index(domain, public_shots)
     if data.get("schema_version") != SCHEMA_VERSION:
         print(f"[embed-index] schema_version mismatch; rebuilding domain={domain}")
@@ -137,29 +155,44 @@ def load_or_build_domain_index(domain: str, public_shots: List[Dict[str,str]]) -
     if not isinstance(data.get("examples"), list):
         print(f"[embed-index] malformed examples list; rebuilding domain={domain}")
         return build_domain_index(domain, public_shots)
-    print(f"[embed-index] loaded domain={domain} examples={len(data['examples'])} dim={data.get('vector_dim')} path={path}")
+    print(
+        f"[embed-index] loaded domain={domain} examples={len(data['examples'])} dim={data.get('vector_dim')} path={path}"
+    )
     return data
+
 
 # --------------------- Selection Using Index --------------------- #
 
+
 def _tokenize(text: str) -> List[str]:
     import re
+
     return [t for t in re.split(r"[^a-z0-9]+", text.lower()) if t and len(t) > 1]
+
 
 def _heuristic_score(q_tokens: set, ex_question: str) -> int:
     ex_tokens = set(_tokenize(ex_question))
     score = 0
-    if ex_question.lower() in " ".join(q_tokens) or any(ex_question.lower() in t for t in q_tokens):
+    if ex_question.lower() in " ".join(q_tokens) or any(
+        ex_question.lower() in t for t in q_tokens
+    ):
         score += 10
     overlap = q_tokens.intersection(ex_tokens)
     score += len(overlap)
-    if ("workload" in ex_tokens and "workload" in q_tokens) or ("latency" in ex_tokens and "latency" in q_tokens):
+    if ("workload" in ex_tokens and "workload" in q_tokens) or (
+        "latency" in ex_tokens and "latency" in q_tokens
+    ):
         score += 2
-    if ("pod" in ex_tokens or "pods" in ex_tokens) and ("pod" in q_tokens or "pods" in q_tokens):
+    if ("pod" in ex_tokens or "pods" in ex_tokens) and (
+        "pod" in q_tokens or "pods" in q_tokens
+    ):
         score += 2
     return score
 
-def select_with_index(nl_question: str, examples: List[Dict[str,str]], domain: str, top_k: int = 3) -> List[Dict[str,str]]:
+
+def select_with_index(
+    nl_question: str, examples: List[Dict[str, str]], domain: str, top_k: int = 3
+) -> List[Dict[str, str]]:
     idx = load_or_build_domain_index(domain, examples)
     ex_list = idx.get("examples", [])
     if not ex_list:
@@ -168,17 +201,19 @@ def select_with_index(nl_question: str, examples: List[Dict[str,str]], domain: s
     q_vecs = create_embeddings([nl_question])
     if q_vecs is None or not q_vecs:
         if os.environ.get("REQUIRE_EMBEDDINGS", "0") == "1":
-            raise RuntimeError("Embeddings required but unavailable for query embedding.")
+            raise RuntimeError(
+                "Embeddings required but unavailable for query embedding."
+            )
         print("[embed-index] fallback heuristic only (no query vector)")
         q_tokens = set(_tokenize(nl_question))
-        scored = [( _heuristic_score(q_tokens, ex["question"]), ex) for ex in ex_list]
+        scored = [(_heuristic_score(q_tokens, ex["question"]), ex) for ex in ex_list]
         scored.sort(key=lambda x: x[0], reverse=True)
         return [ex for s, ex in scored[:top_k]]
     q_vec = q_vecs[0]
     # Build hybrid score like original: 0.55 heuristic + 0.45 cosine
     q_tokens = set(_tokenize(nl_question))
     max_h = 0
-    records: List[Tuple[float, Dict[str,str]]] = []
+    records: List[Tuple[float, Dict[str, str]]] = []
     for ex in ex_list:
         h_score = _heuristic_score(q_tokens, ex.get("question", ""))
         if h_score > max_h:
@@ -187,16 +222,21 @@ def select_with_index(nl_question: str, examples: List[Dict[str,str]], domain: s
         h_score = _heuristic_score(q_tokens, ex.get("question", ""))
         h_norm = (h_score / max_h) if max_h > 0 else 0.0
         vec = ex.get("vector", [])
-        cosine = sum(a*b for a,b in zip(q_vec, vec)) if vec else 0.0
+        cosine = sum(a * b for a, b in zip(q_vec, vec)) if vec else 0.0
         final = 0.55 * h_norm + 0.45 * cosine
         records.append((final, ex))
     records.sort(key=lambda x: x[0], reverse=True)
     top = [ex for s, ex in records if s > 0][:top_k]
     if not top:
         top = [ex for s, ex in records[:top_k]]
-    print(f"[embed-index] selection domain={domain} top_scores={[round(s,4) for s,_ in records[:3]]}")
+    print(
+        f"[embed-index] selection domain={domain} top_scores={[round(s,4) for s,_ in records[:3]]}"
+    )
     # Convert back to original example dict shape {question,kql}
-    return [{"question": ex.get("question",""), "kql": ex.get("kql","" )} for ex in top]
+    return [
+        {"question": ex.get("question", ""), "kql": ex.get("kql", "")} for ex in top
+    ]
+
 
 __all__ = [
     "load_or_build_domain_index",
