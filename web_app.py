@@ -2478,15 +2478,28 @@ def evaluate_query():
         gen_exec_stats = res.get("returned_exec_stats") or {}
         exp_exec_stats = res.get("expected_exec_stats") or {}
 
-        # Detect generated execution error
+        # Detect generated execution error.
+        # Priority: explicit exec_stats error (server/SDK) should take precedence.
+        # Do NOT treat a benign 'message' string (e.g. 'Query executed successfully')
+        # on the `generated_query` dict as an error unless the payload indicates an error.
         gen_err = None
-        if isinstance(gen_q, dict):
-            # generated_query may be an object with error/kql_query/message fields
-            gen_err = gen_q.get("error") or gen_q.get("message")
-
-        # Also check exec_stats for error indicator
-        if not gen_err and isinstance(gen_exec_stats, dict):
+        if isinstance(gen_exec_stats, dict):
             gen_err = gen_exec_stats.get("error") or gen_exec_stats.get("message")
+
+        # If exec_stats did not indicate an error, inspect generated_query object
+        if not gen_err and isinstance(gen_q, dict):
+            # If the generator explicitly marked an error type, respect it
+            qtype = (gen_q.get("type") or "").lower()
+            if qtype == "query_error":
+                gen_err = gen_q.get("error") or gen_q.get("message")
+            else:
+                # If generated_query is expected to be a string-like object, consider
+                # absence of a kql_query a failure. Only treat 'message' as error when
+                # it contains failure keywords.
+                if not gen_q.get("kql_query"):
+                    msg = gen_q.get("message") or ""
+                    if any(k in msg.lower() for k in ("error", "failed", "could not", "no value")):
+                        gen_err = msg
 
         # Detect expected execution error
         exp_err = None
