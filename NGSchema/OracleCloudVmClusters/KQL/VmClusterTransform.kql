@@ -1,6 +1,0 @@
-source
- | project 
-    TimeGenerated = ['time'], 
-    OperationName = operationName,
-    ResultDescription = tostring(body),
-    LifeCycleState = category

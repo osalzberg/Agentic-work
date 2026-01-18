@@ -1,3 +1,0 @@
-DataTransferOperations
-| where Status == "SenderProcessing"
-| limit 100

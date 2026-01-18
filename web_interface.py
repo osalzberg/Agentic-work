@@ -9,24 +9,20 @@ This file is kept for lightweight, form-based KQL execution.
 
 from __future__ import annotations
 
-from fastapi import FastAPI, Form
-from fastapi.responses import HTMLResponse
-import uvicorn
 from datetime import timedelta
 from typing import List
 
-try:  # Azure SDK imports
-    from azure.identity import DefaultAzureCredential
-    from azure.monitor.query import LogsQueryClient, LogsQueryStatus
-except ImportError as e:  # Provide helpful guidance if missing
-    raise SystemExit(
-        "Missing Azure Monitor dependencies. Install requirements first: pip install -r requirements.txt\n" \
-        f"Original import error: {e}"
-    )
+import uvicorn
+from fastapi import FastAPI, Form
+from fastapi.responses import HTMLResponse
 
-# Instantiate client once (relies on Azure CLI / Managed Identity / Env creds)
-_credential = DefaultAzureCredential(exclude_interactive_browser_credential=False)
-_logs_client = LogsQueryClient(_credential)
+from utils.kql_exec import get_logs_client, execute_kql_query, is_success
+
+# Prefer a shared client created via the canonical helper
+_logs_client = get_logs_client()
+# Note: `execute_kql_query` returns `exec_stats['status']` as a normalized
+# upper-case string (e.g. "SUCCESS"). The SDK enum is available as
+# `exec_stats['raw_status']` when present. Use `is_success(...)` helper.
 
 app = FastAPI(title="Azure Log Analytics KQL Query Interface (Legacy)")
 
@@ -113,28 +109,70 @@ async def root():  # noqa: D401
 
 
 @app.post("/query", response_class=HTMLResponse)
-async def query(workspace_id: str = Form(...), query: str = Form(...), timespan_hours: int = Form(1)):
+async def query(
+    workspace_id: str = Form(...), query: str = Form(...), timespan_hours: int = Form(1)
+):
     try:
         timespan = timedelta(hours=int(timespan_hours))
-        response = _logs_client.query_workspace(workspace_id=workspace_id, query=query, timespan=timespan)
+        exec_result = execute_kql_query(kql=query, workspace_id=workspace_id, client=_logs_client, timespan=timespan)
+        # Support both dict-form exec_result and SDK response objects
+        if isinstance(exec_result, dict):
+            tables = exec_result.get("tables", [])
+            status = exec_result.get("exec_stats", {}).get("status")
+        else:
+            tables = getattr(exec_result, "tables", [])
+            status = getattr(exec_result, "status", None)
 
-        if response.status == LogsQueryStatus.SUCCESS:
+        # Derive UI status for consistency with other endpoints
+        if isinstance(status, str):
+            norm_status = status.upper()
+        else:
+            norm_status = None
+
+        if norm_status in ("SUCCESS", "SUCCEEDED"):
+            ui_status = "success"
+        elif norm_status in ("NO_DATA", "NODATA"):
+            ui_status = "no_data"
+        elif norm_status in ("FAILED", "FAILURE", "UNKNOWN"):
+            ui_status = "failed"
+        else:
+            ui_status = "error"
+
+        if is_success(status) and tables:
             tables_html: List[str] = []
-            for ti, table in enumerate(response.tables):  # type: ignore[attr-defined]
-                cols = [getattr(c, 'name', str(c)) for c in getattr(table, 'columns', [])]
-                rows = getattr(table, 'rows', [])
-                header = '<tr>' + ''.join(f'<th>{c}</th>' for c in cols) + '</tr>' if cols else ''
+            for ti, table in enumerate(tables):
+                cols = [getattr(c, "name", str(c)) for c in table.get("columns", [])]
+                rows = table.get("rows", [])
+                header = (
+                    "<tr>" + "".join(f"<th>{c}</th>" for c in cols) + "</tr>"
+                    if cols
+                    else ""
+                )
                 body_parts = []
                 for r in rows:
-                    body_parts.append('<tr>' + ''.join(f'<td>{'' if v is None else v}</td>' for v in r) + '</tr>')
+                    body_parts.append(
+                        "<tr>"
+                        + "".join(f"<td>{'' if v is None else v}</td>" for v in r)
+                        + "</tr>"
+                    )
                 table_html = f"<h4>Table {ti+1} ({len(rows)} rows)</h4><table>{header}{''.join(body_parts)}</table>"
                 tables_html.append(table_html)
-            results_html = "<div class='results success'><h3>✅ Query executed successfully.</h3>" + ''.join(tables_html) + "</div>"
+            results_html = (
+                f"<div class='results success' data-ui-status='{ui_status}'><h3>✅ Query executed successfully.</h3>"
+                + "".join(tables_html)
+                + "</div>"
+            )
         else:
-            partial = getattr(response, 'partial_error', 'Query failed')
-            results_html = f"<div class='results error'><h3>❌ Query failed</h3><pre>{partial}</pre></div>"
+            # Try to show a helpful error message
+            if isinstance(exec_result, dict):
+                partial = exec_result.get("exec_stats", {}).get("error", "Query failed")
+            else:
+                partial = getattr(exec_result, "partial_error", "Query failed")
+            results_html = f"<div class='results error' data-ui-status='{ui_status}'><h3>❌ Query failed</h3><pre>{partial}</pre></div>"
     except Exception as exc:  # noqa: BLE001
-        results_html = f"<div class='results error'><h3>❌ Error</h3><pre>{exc}</pre></div>"
+        results_html = (
+            f"<div class='results error'><h3>❌ Error</h3><pre>{exc}</pre></div>"
+        )
     return _render(results_html)
 
 

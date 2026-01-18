@@ -4,22 +4,42 @@ This module provides a class for authenticating and querying Azure Monitor (Log 
 All methods are heavily commented for clarity and learning.
 """
 from azure.identity import AzureCliCredential, DefaultAzureCredential
+from azure.core.credentials import AccessToken
 from azure.monitor.query import LogsQueryClient, LogsQueryStatus
+from datetime import datetime, timedelta
+
+class UserTokenCredential:
+    """Credential that uses a user's access token from Azure AD authentication."""
+    def __init__(self, access_token):
+        self.access_token = access_token
+    
+    def get_token(self, *scopes, **kwargs):
+        # Return token that expires in 1 hour (Azure AD tokens typically last 1 hour)
+        expires_on = int((datetime.now() + timedelta(hours=1)).timestamp())
+        return AccessToken(self.access_token, expires_on)
 
 class AzureMonitorAgent:
-    def __init__(self):
+    def __init__(self, user_token=None):
         """
-        Initialize the AzureMonitorAgent with Azure CLI credentials if available,
-        otherwise fall back to DefaultAzureCredential.
+        Initialize the AzureMonitorAgent.
+        
+        Args:
+            user_token: Optional access token from authenticated user (Azure AD).
+                       If provided, queries will run as that user.
+                       If not provided, uses CLI credentials or managed identity.
         """
-        try:
-            # Try Azure CLI credentials first
-            self.credential = AzureCliCredential()
-            # This will raise if az is not installed or not logged in
-            _ = self.credential.get_token("https://management.azure.com/.default")
-        except Exception:
-            # Fallback to DefaultAzureCredential (env vars, managed identity, etc.)
-            self.credential = DefaultAzureCredential()
+        if user_token:
+            # Use the user's token from Azure AD authentication
+            self.credential = UserTokenCredential(user_token)
+        else:
+            try:
+                # Try Azure CLI credentials first
+                self.credential = AzureCliCredential()
+                # This will raise if az is not installed or not logged in
+                _ = self.credential.get_token("https://management.azure.com/.default")
+            except Exception:
+                # Fallback to DefaultAzureCredential (env vars, managed identity, etc.)
+                self.credential = DefaultAzureCredential()
         self.client = LogsQueryClient(self.credential)
 
     def query_log_analytics(self, workspace_id, kql_query, timespan=None):

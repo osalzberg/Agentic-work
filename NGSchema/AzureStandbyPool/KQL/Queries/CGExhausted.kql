@@ -1,5 +1,0 @@
-SCGPoolExecutionLog
-| where EventName == "StandbyPoolExhausted"
-| project TimeGenerated
-| sort by TimeGenerated desc
-| limit 30

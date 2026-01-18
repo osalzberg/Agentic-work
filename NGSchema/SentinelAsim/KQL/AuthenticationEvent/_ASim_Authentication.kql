@@ -1,4 +1,0 @@
-union isfuzzy=true
-_ASim_AuthenticationBuiltIn(disabled= disabled),
-ASim_AuthenticationSolutions(disabled= disabled),
-ASim_AuthenticationCustom(disabled= disabled)

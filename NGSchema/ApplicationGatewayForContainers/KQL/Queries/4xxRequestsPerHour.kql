@@ -1,4 +1,0 @@
-AGCAccessLogs
-| where HttpStatusCode > 399 and HttpStatusCode < 500
-| summarize AggregatedValue = count() by bin(TimeGenerated, 1h), _ResourceId
-| render timechart

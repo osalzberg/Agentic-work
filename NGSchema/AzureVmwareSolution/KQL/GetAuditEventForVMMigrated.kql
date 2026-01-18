@@ -1,3 +1,0 @@
-AVSSyslog
-| where Message has "vmmigratedevent"
-| take 100

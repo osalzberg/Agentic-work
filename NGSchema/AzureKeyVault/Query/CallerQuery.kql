@@ -1,2 +1,0 @@
-AZKVAuditLogs
-| summarize count() by CallerIpAddress

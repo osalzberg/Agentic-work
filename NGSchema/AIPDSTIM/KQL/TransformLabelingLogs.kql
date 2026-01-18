@@ -1,7 +1,0 @@
-source 
-| project
-	TimeGenerated=TimeGenerated,
-	Uri=Uri,
-	SensitivityLabelName=SensitivityLabelName,
-	CorrelationId=CorrelationId,
-	AssetLastScanTime=AssetLastScanTime

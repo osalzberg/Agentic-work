@@ -1,8 +1,0 @@
-source 
-| project 
-    TimeGenerated = todatetime(["time"]),
-    Location = location,
-    OperationName = operationName,
-    Category = category,
-    Level = level,
-    Details = properties

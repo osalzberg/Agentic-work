@@ -23,6 +23,7 @@ Edge Cases Handled:
 
 The loader purposely keeps logic lightweight (no external deps beyond stdlib).
 """
+
 from __future__ import annotations
 
 import csv
@@ -36,29 +37,36 @@ _MTIME_INDEX: dict[str, float] = {}
 
 # File -> Primary table mapping (single table focus)
 PRIMARY_FILE_TABLE_MAP = {
-    'ContainerLogV2_kql_examples.csv': 'ContainerLogV2',
-    'KubePodInventory_kql_examples.csv': 'KubePodInventory',
+    "ContainerLogV2_kql_examples.csv": "ContainerLogV2",
+    "KubePodInventory_kql_examples.csv": "KubePodInventory",
 }
 
 # Heuristic candidate tables for multi-table detection in public_shots.csv
-PUBLIC_SHOTS_TABLE_CANDIDATES: list[str] = []  # no longer used (public_shots excluded from suggestions)
+PUBLIC_SHOTS_TABLE_CANDIDATES: list[str] = (
+    []
+)  # no longer used (public_shots excluded from suggestions)
+
 
 def _normalize_code(code: str) -> str:
     if not code:
-        return ''
+        return ""
     # Normalize line endings and trim
-    code = code.replace('\r\n', '\n').replace('\r', '\n').strip()
+    code = code.replace("\r\n", "\n").replace("\r", "\n").strip()
     # Collapse leading/trailing blank lines
-    while '\n\n' in code:
-        code = code.replace('\n\n', '\n')
+    while "\n\n" in code:
+        code = code.replace("\n\n", "\n")
     return code
+
 
 def _public_shots_detect_tables(code: str) -> List[str]:
     """Deprecated: public_shots.csv no longer ingested for suggestions.
     Returns empty list always."""
     return []
 
-def _parse_csv_file(path: str, primary_table: str | None, multi_detect: bool) -> Dict[str, List[dict]]:
+
+def _parse_csv_file(
+    path: str, primary_table: str | None, multi_detect: bool
+) -> Dict[str, List[dict]]:
     """Parse a CSV file returning table->list of query dicts.
 
     If primary_table is provided, all rows map to that table.
@@ -68,14 +76,14 @@ def _parse_csv_file(path: str, primary_table: str | None, multi_detect: bool) ->
     if not os.path.exists(path):
         return results
     try:
-        with open(path, 'r', encoding='utf-8-sig') as f:
+        with open(path, "r", encoding="utf-8-sig") as f:
             reader = csv.DictReader(f)
             for row in reader:
-                prompt = row.get('Prompt')
-                query = row.get('Query')
+                prompt = row.get("Prompt")
+                query = row.get("Query")
                 if query is None:
                     # Some rows might have differently cased headers; attempt fallback
-                    query = row.get('query') or ''
+                    query = row.get("query") or ""
                 query = _normalize_code(query)
                 if not query:
                     continue
@@ -93,21 +101,22 @@ def _parse_csv_file(path: str, primary_table: str | None, multi_detect: bool) ->
                 name = prompt
                 # Preserve both 'prompt' (original human-friendly text) and 'name' (legacy display fallback)
                 entry = {
-                    'prompt': prompt,  # may be empty string if not provided
-                    'name': name,
-                    'code': query,
-                    'source': 'capsule-csv',
-                    'file': os.path.basename(path)
+                    "prompt": prompt,  # may be empty string if not provided
+                    "name": name,
+                    "code": query,
+                    "source": "capsule-csv",
+                    "file": os.path.basename(path),
                 }
                 for tbl in tables:
                     bucket = results.setdefault(tbl, [])
                     # Deduplicate within file by normalized code
-                    if any(_normalize_code(e['code']) == query for e in bucket):
+                    if any(_normalize_code(e["code"]) == query for e in bucket):
                         continue
                     bucket.append(entry)
     except Exception as e:  # noqa: BLE001
         print(f"[ExamplesLoader] Failed parsing {path}: {e}")
     return results
+
 
 def _needs_reload(path: str) -> bool:
     try:
@@ -117,7 +126,10 @@ def _needs_reload(path: str) -> bool:
     cached_mtime = _MTIME_INDEX.get(path)
     return cached_mtime is None or mtime > cached_mtime
 
-def load_capsule_csv_queries(base_dir: str | None = None, force: bool = False) -> Dict[str, List[dict]]:
+
+def load_capsule_csv_queries(
+    base_dir: str | None = None, force: bool = False
+) -> Dict[str, List[dict]]:
     """Load (and cache) container capsule CSV queries.
 
     Parameters:
@@ -128,7 +140,9 @@ def load_capsule_csv_queries(base_dir: str | None = None, force: bool = False) -
       dict mapping table_name -> list[ { name, code, source, file } ]
     """
     if base_dir is None:
-        base_dir = os.path.join(os.path.dirname(__file__), 'containers_capsule', 'kql_examples')
+        base_dir = os.path.join(
+            os.path.dirname(__file__), "containers_capsule", "kql_examples"
+        )
 
     with _CACHE_LOCK:
         # Determine files present
@@ -136,12 +150,12 @@ def load_capsule_csv_queries(base_dir: str | None = None, force: bool = False) -
             return {}
         aggregate: Dict[str, List[dict]] = {}
         for fname in os.listdir(base_dir):
-            if not fname.endswith('.csv'):
+            if not fname.endswith(".csv"):
                 continue
             path = os.path.join(base_dir, fname)
             primary_table = PRIMARY_FILE_TABLE_MAP.get(fname)
             # public_shots.csv is intentionally ignored for suggestion ingestion
-            if fname == 'public_shots.csv':
+            if fname == "public_shots.csv":
                 continue
             multi_detect = False
             if not force and not _needs_reload(path):
@@ -151,7 +165,9 @@ def load_capsule_csv_queries(base_dir: str | None = None, force: bool = False) -
                     for tbl, entries in fragment.items():
                         aggregate.setdefault(tbl, []).extend(entries)
                     continue
-            fragment = _parse_csv_file(path, primary_table=primary_table, multi_detect=multi_detect)
+            fragment = _parse_csv_file(
+                path, primary_table=primary_table, multi_detect=multi_detect
+            )
             _CACHE[path] = fragment
             try:
                 _MTIME_INDEX[path] = os.path.getmtime(path)
@@ -165,7 +181,7 @@ def load_capsule_csv_queries(base_dir: str | None = None, force: bool = False) -
             deduped: List[dict] = []
             seen_codes = set()
             for e in entries:
-                norm = _normalize_code(e['code'])
+                norm = _normalize_code(e["code"])
                 if norm in seen_codes:
                     continue
                 seen_codes.add(norm)
@@ -173,4 +189,5 @@ def load_capsule_csv_queries(base_dir: str | None = None, force: bool = False) -
             aggregate[tbl] = deduped
         return aggregate
 
-__all__ = ['load_capsule_csv_queries']
+
+__all__ = ["load_capsule_csv_queries"]

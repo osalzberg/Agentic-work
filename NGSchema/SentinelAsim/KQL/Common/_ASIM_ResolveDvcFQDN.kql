@@ -1,7 +1,0 @@
-T
-| invoke _ASIM_ResolveFQDN (field)
-| project-rename 
-    DvcHostname = ExtractedHostname,
-    DvcDomain = Domain,
-    DvcFQDN = FQDN,
-    DvcDomainType = DomainType

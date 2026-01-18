@@ -1,3 +1,0 @@
-PowerPlatformConnectorActivity
-| where EventOriginalType == "PutConnection"
-| summarize by EventOriginalType, ActorName, Environment = tostring(AdditionalInfo.environmentName)

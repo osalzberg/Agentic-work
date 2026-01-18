@@ -1,2 +1,0 @@
-AgriFoodFarmManagementLogs
-| summarize Count = count() by OperationName, ResultSignature

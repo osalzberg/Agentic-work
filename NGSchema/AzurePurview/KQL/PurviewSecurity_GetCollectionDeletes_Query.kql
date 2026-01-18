@@ -1,4 +1,0 @@
-PurviewSecurityLogs
-| where EntityType == 'Collections'
-| where OperationName == 'Delete'
-| take 100

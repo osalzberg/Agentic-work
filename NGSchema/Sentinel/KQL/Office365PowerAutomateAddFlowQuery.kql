@@ -1,3 +1,0 @@
-PowerAutomateActivity
-| where EventOriginalType == "CreateFlow"
-| summarize count() by ActorName, FlowDetailsUrl

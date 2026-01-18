@@ -1,0 +1,69 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.pyc
+*.pyo
+*.egg-info/
+.eggs/
+*.egg
+
+# Virtual environments
+venv/
+ENV/
+env/
+.venv/
+
+# Git
+.git/
+.gitignore
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+._*
+
+# Logs and temp files
+*.log
+logs/
+*.pid
+*.seed
+
+# Test files
+test_*.py
+debug_*.py
+demo_*.py
+verify_*.py
+diagnose_*.py
+
+# Large schema files (not needed at runtime)
+NGSchema/
+
+# Build artifacts
+build/
+dist/
+*.zip
+
+# Azure config
+.azure/
+claude_desktop_config.json
+AI_INSTRUCTIONS.md
+
+# Project documentation
+*.md
+!README.md
+
+# Embedding index cache
+embedding_index/*.json
+manifest_cache.json*
+workspace_schema_cache.json
+
+# Reports
+/reports

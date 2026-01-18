@@ -1,3 +1,0 @@
-ContainerAppSystemLogs_CL
-| where Log_s contains "probe failed: "
-| top 100

@@ -1,5 +1,0 @@
-SVMPoolExecutionLog
-| where EventName == "StandbyPoolDegradedPool"
-| project TimeGenerated, Location
-| sort by TimeGenerated desc
-| limit 30

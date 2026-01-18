@@ -1,2 +1,0 @@
-AHDSDicomAuditLogs
-| summarize Count = count() by OperationName

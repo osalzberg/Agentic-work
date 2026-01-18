@@ -1,4 +1,0 @@
-//List the IP addresses and number of calls
-ResourceManagementPublicAccessLogs
-| where Category == "PublicAccessLogs"
-| summarize count() by CallerIpAddress 

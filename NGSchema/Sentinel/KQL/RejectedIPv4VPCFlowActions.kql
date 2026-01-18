@@ -1,4 +1,0 @@
-AWSVPCFlow
-| where Action == "REJECT"
-| where Type == "IPv4"
-| take 10

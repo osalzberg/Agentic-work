@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """Create a sample CSV template for batch testing"""
 
-import pandas as pd
 import sys
+
+import pandas as pd
 
 # Sample prompts for testing
 sample_data = {
@@ -21,35 +22,37 @@ sample_data = {
         "",
     ],
     "Generated Query": [
-        "",  # Will be filled by batch_test_queries.py
+        "",  # Will be filled by benchmark_queries.py
         "",
         "",
         "",
         "",
     ],
     "Reason": [
-        "",  # Will be filled by batch_test_queries.py
+        "",  # Will be filled by benchmark_queries.py
         "",
         "",
         "",
         "",
-    ]
+    ],
 }
+
 
 def create_template(output_file="test_prompts_template.csv"):
     """Create a template CSV file with sample prompts"""
     df = pd.DataFrame(sample_data)
-    
+
     try:
         df.to_csv(output_file, index=False)
         print(f"✅ Template created: {output_file}")
         print(f"📝 Contains {len(df)} sample prompts")
         print("\nTo use this template:")
         print(f"1. Edit '{output_file}' and add your test prompts")
-        print(f"2. Run: python batch_test_queries.py {output_file}")
+        print(f"2. Run: python benchmark_queries.py {output_file}")
     except Exception as e:
         print(f"❌ Failed to create template: {e}")
         sys.exit(1)
+
 
 if __name__ == "__main__":
     output = sys.argv[1] if len(sys.argv) > 1 else "test_prompts_template.csv"

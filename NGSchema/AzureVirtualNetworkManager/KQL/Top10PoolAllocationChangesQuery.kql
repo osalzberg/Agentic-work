@@ -1,3 +1,0 @@
-AVNMIPAMPoolAllocationChange
-| top 10 by TimeGenerated desc
-| project TimeGenerated, ChangeType, ChangeReason, AllocationResources, ResultType

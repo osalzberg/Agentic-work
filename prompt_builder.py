@@ -19,6 +19,7 @@ The function returns (prompt_text, metadata_dict) so callers can log metadata (h
 
 NOTE: This is intentionally dependency-light and avoids external NLP libs; you can plug in a richer intent classifier later.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -26,8 +27,8 @@ import json
 import os
 import re
 import textwrap
-from dataclasses import dataclass, asdict
-from datetime import datetime, UTC
+from dataclasses import asdict, dataclass
+from datetime import UTC, datetime
 from typing import Dict, List, Optional, Tuple
 
 PROMPT_SCHEMA_VERSION = 2
@@ -36,6 +37,7 @@ REPO_ROOT = os.path.dirname(os.path.abspath(__file__))
 # Load environment variables
 try:
     from dotenv import load_dotenv
+
     load_dotenv()
 except ImportError:
     pass
@@ -47,6 +49,7 @@ SYSTEM_PROMPT = os.environ.get("KQL_SYSTEM_PROMPT", _DEFAULT_SYSTEM_PROMPT)
 # Global system prompt override for web interface
 _system_prompt_override: str | None = None
 
+
 def set_system_prompt_override(system_prompt: str | None) -> None:
     """Set a global system prompt override for the current request."""
     global _system_prompt_override
@@ -54,16 +57,20 @@ def set_system_prompt_override(system_prompt: str | None) -> None:
     if system_prompt:
         print(f"[debug:] System prompt override set")
 
+
 def clear_system_prompt_override() -> None:
     """Clear the global system prompt override."""
     global _system_prompt_override
     _system_prompt_override = None
 
+
 def get_system_prompt() -> str:
     """Get the current system prompt (override if set, otherwise default)."""
     return _system_prompt_override if _system_prompt_override else SYSTEM_PROMPT
 
+
 # ------------------------- File Loading Helpers ------------------------- #
+
 
 def _safe_read(path: str) -> str:
     try:
@@ -103,6 +110,7 @@ Output Mode:
 FUNC_PATTERN = re.compile(r"^let\s+([A-Za-z0-9_]+)\s*=\s*\(")
 # We'll implement more resilient extraction without brittle regex.
 
+
 def extract_function_index(kql_text: str) -> List[str]:
     """Extract top-level 'let Name = (params){' patterns from the KQL helper file.
     We only keep the signature (name + parameter list) to minimize token usage.
@@ -113,7 +121,9 @@ def extract_function_index(kql_text: str) -> List[str]:
         line_stripped = line.strip()
         if line_stripped.startswith("let ") and "={" not in line_stripped:
             # Pattern: let FunctionName = (params){
-            match = re.match(r"let\s+([A-Za-z0-9_]+)\s*=\s*\(([^)]*)\)\{", line_stripped)
+            match = re.match(
+                r"let\s+([A-Za-z0-9_]+)\s*=\s*\(([^)]*)\)\{", line_stripped
+            )
             if match:
                 name, params = match.groups()
                 signatures.append(f"{name}({params.strip()})")
@@ -150,6 +160,7 @@ def derive_context_addendum(user_query: str) -> str:
 
 # ------------------------- Clarification & Output Mode ------------------ #
 
+
 def clarify_query(user_query: str) -> str:
     """Light normalization: trim, collapse whitespace. (Avoid semantic rewrite here)."""
     normalized = re.sub(r"\s+", " ", user_query.strip())
@@ -159,11 +170,13 @@ def clarify_query(user_query: str) -> str:
 def decide_output_mode(clarified_query: str) -> Tuple[str, str]:
     """Return (mode, directive_text)."""
     ql = clarified_query.lower()
-    needs_explanation = any(w in ql for w in ["why", "explain", "describe", "root cause", "reason"])  # simple heuristic
+    needs_explanation = any(
+        w in ql for w in ["why", "explain", "describe", "root cause", "reason"]
+    )  # simple heuristic
     if needs_explanation:
         return (
             "explanation+sql",
-            "Output Mode: Provide a concise explanation paragraph first, then a KQL block."
+            "Output Mode: Provide a concise explanation paragraph first, then a KQL block.",
         )
     return ("kql-only", "Output Mode: Return only the KQL query (no prose).")
 
@@ -185,6 +198,7 @@ def mask_secrets(text: str) -> str:
 
 # ------------------------- Hash Utility --------------------------------- #
 
+
 def stable_hash(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()[:16]
 
@@ -203,6 +217,7 @@ class PromptMetadata:
 
 # ------------------------- Main Builder -------------------------------- #
 
+
 def build_prompt(
     user_query: str,
     intent_meta: Optional[Dict] = None,
@@ -214,7 +229,7 @@ def build_prompt(
 
     # Use the system prompt constant
     system_text = SYSTEM_PROMPT
-    
+
     # Use the user query directly without modification
     full_prompt = system_text
 
@@ -233,9 +248,12 @@ def build_prompt(
 # ------------------------- Demo / CLI ----------------------------------- #
 if __name__ == "__main__":
     import argparse
+
     parser = argparse.ArgumentParser(description="Build an AKS Container Logs prompt")
     parser.add_argument("query", help="User natural language query")
-    parser.add_argument("--no-capsule", action="store_true", help="Exclude domain capsule layer")
+    parser.add_argument(
+        "--no-capsule", action="store_true", help="Exclude domain capsule layer"
+    )
     args = parser.parse_args()
 
     prompt, metadata = build_prompt(args.query, include_capsule=not args.no_capsule)

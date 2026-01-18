@@ -1,3 +1,0 @@
-AADServicePrincipalRiskEvents
-| summarize arg_max(LastUpdatedDateTime, *) by RequestId, ServicePrincipalId
-| where RiskState == "atRisk"

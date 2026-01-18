@@ -9,9 +9,11 @@ Heuristics:
 - Headerless CSV detection for two-column prompt/expected files
 - Column name normalization and mapping
 """
-from typing import Tuple, List, Optional, Any
-import pandas as pd
+
 import io
+from typing import Any, List, Optional, Tuple
+
+import pandas as pd
 
 
 def _normalize_columns(df: pd.DataFrame) -> pd.DataFrame:
@@ -22,16 +24,24 @@ def _normalize_columns(df: pd.DataFrame) -> pd.DataFrame:
     col_map = {}
     for col in df.columns:
         col_lower = col.lower()
-        if col_lower in ['prompt', 'question', 'nl', 'natural language', 'ask']:
-            col_map[col] = 'Prompt'
-        elif col_lower in ['query', 'kql', 'expected', 'expected query', 'expected_query']:
-            col_map[col] = 'Expected Query'
+        if col_lower in ["prompt", "question", "nl", "natural language", "ask"]:
+            col_map[col] = "Prompt"
+        elif col_lower in [
+            "query",
+            "kql",
+            "expected",
+            "expected query",
+            "expected_query",
+        ]:
+            col_map[col] = "Expected Query"
     if col_map:
         df = df.rename(columns=col_map)
     return df
 
 
-def parse_prompts_from_file(source: Any, prompt_col: str = 'Prompt', expected_cols: Optional[List[str]] = None) -> Tuple[List[str], List[dict], pd.DataFrame]:
+def parse_prompts_from_file(
+    source: Any, prompt_col: str = "Prompt", expected_cols: Optional[List[str]] = None
+) -> Tuple[List[str], List[dict], pd.DataFrame]:
     """Parse prompts and optional expected queries from a CSV or Excel input.
 
     Args:
@@ -46,7 +56,7 @@ def parse_prompts_from_file(source: Any, prompt_col: str = 'Prompt', expected_co
         ValueError if parsing fails or required columns are missing.
     """
     if expected_cols is None:
-        expected_cols = ['Expected Query', 'Query']
+        expected_cols = ["Expected Query", "Query"]
 
     # Determine whether source is a file path or file-like
     is_path = isinstance(source, (str,))
@@ -54,15 +64,17 @@ def parse_prompts_from_file(source: Any, prompt_col: str = 'Prompt', expected_co
     try:
         if is_path:
             path = str(source)
-            if path.lower().endswith('.csv'):
+            if path.lower().endswith(".csv"):
                 # Flexible CSV parsing with fallbacks
                 try:
                     df = pd.read_csv(path)
                 except Exception:
                     try:
-                        df = pd.read_csv(path, sep=None, engine='python')
+                        df = pd.read_csv(path, sep=None, engine="python")
                     except Exception:
-                        df = pd.read_csv(path, quotechar='"', escapechar='\\', on_bad_lines='skip')
+                        df = pd.read_csv(
+                            path, quotechar='"', escapechar="\\", on_bad_lines="skip"
+                        )
             else:
                 df = pd.read_excel(path)
         else:
@@ -75,11 +87,16 @@ def parse_prompts_from_file(source: Any, prompt_col: str = 'Prompt', expected_co
             except Exception:
                 try:
                     file_obj.seek(0)
-                    df = pd.read_csv(file_obj, sep=None, engine='python')
+                    df = pd.read_csv(file_obj, sep=None, engine="python")
                 except Exception:
                     try:
                         file_obj.seek(0)
-                        df = pd.read_csv(file_obj, quotechar='"', escapechar='\\', on_bad_lines='skip')
+                        df = pd.read_csv(
+                            file_obj,
+                            quotechar='"',
+                            escapechar="\\",
+                            on_bad_lines="skip",
+                        )
                     except Exception:
                         # Reset and try Excel parsing
                         file_obj.seek(0)
@@ -93,12 +110,12 @@ def parse_prompts_from_file(source: Any, prompt_col: str = 'Prompt', expected_co
             # 1) Try pandas auto-detect (sep=None) with python engine
             try:
                 if is_path:
-                    df2 = pd.read_csv(path, sep=None, engine='python')
+                    df2 = pd.read_csv(path, sep=None, engine="python")
                 else:
                     source.seek(0)
-                    df2 = pd.read_csv(source, sep=None, engine='python')
+                    df2 = pd.read_csv(source, sep=None, engine="python")
                 df2 = _normalize_columns(df2)
-                tried.append('sniff')
+                tried.append("sniff")
                 if prompt_col in df2.columns:
                     df = df2
             except Exception:
@@ -106,7 +123,7 @@ def parse_prompts_from_file(source: Any, prompt_col: str = 'Prompt', expected_co
 
         if prompt_col not in df.columns:
             # 2) Try common delimiters
-            for d in [';', '\t', '|']:
+            for d in [";", "\t", "|"]:
                 try:
                     if is_path:
                         df2 = pd.read_csv(path, sep=d)
@@ -114,7 +131,7 @@ def parse_prompts_from_file(source: Any, prompt_col: str = 'Prompt', expected_co
                         source.seek(0)
                         df2 = pd.read_csv(source, sep=d)
                     df2 = _normalize_columns(df2)
-                    tried.append(f'delim={d}')
+                    tried.append(f"delim={d}")
                     if prompt_col in df2.columns:
                         df = df2
                         break
@@ -125,12 +142,16 @@ def parse_prompts_from_file(source: Any, prompt_col: str = 'Prompt', expected_co
             # 3) Try headerless two-column reload (common case)
             try:
                 if is_path:
-                    df2 = pd.read_csv(path, header=None, names=[prompt_col, expected_cols[0]])
+                    df2 = pd.read_csv(
+                        path, header=None, names=[prompt_col, expected_cols[0]]
+                    )
                 else:
                     source.seek(0)
-                    df2 = pd.read_csv(source, header=None, names=[prompt_col, expected_cols[0]])
+                    df2 = pd.read_csv(
+                        source, header=None, names=[prompt_col, expected_cols[0]]
+                    )
                 df2 = _normalize_columns(df2)
-                tried.append('headerless')
+                tried.append("headerless")
                 if prompt_col in df2.columns:
                     df = df2
             except Exception:
@@ -138,7 +159,9 @@ def parse_prompts_from_file(source: Any, prompt_col: str = 'Prompt', expected_co
 
         # Final check
         if prompt_col not in df.columns:
-            raise ValueError(f"Missing required column: {prompt_col} (attempted: {', '.join(tried)})")
+            raise ValueError(
+                f"Missing required column: {prompt_col} (attempted: {', '.join(tried)})"
+            )
 
         # Determine expected column if present
         expected_col = None
@@ -147,12 +170,16 @@ def parse_prompts_from_file(source: Any, prompt_col: str = 'Prompt', expected_co
                 expected_col = c
                 break
 
-        prompts = df[prompt_col].fillna('').astype(str).tolist()
+        prompts = df[prompt_col].fillna("").astype(str).tolist()
         test_cases = []
         for idx in range(len(df)):
             test_case = {
-                'prompt': prompts[idx],
-                'expected_query': df[expected_col].iloc[idx] if expected_col and pd.notna(df[expected_col].iloc[idx]) else None
+                "prompt": prompts[idx],
+                "expected_query": (
+                    df[expected_col].iloc[idx]
+                    if expected_col and pd.notna(df[expected_col].iloc[idx])
+                    else None
+                ),
             }
             test_cases.append(test_case)
 

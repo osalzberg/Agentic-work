@@ -1,5 +1,0 @@
-ACSCallAutomationIncomingOperations
-// Filter OperationName to view results for each API.
-    | where OperationName in ("StartTranscription", "StopTranscription", "UpdateTranscription")
-    | where tostring(ResultSignature) matches regex "2.."
-    | summarize TranscriptionSuccess=count()

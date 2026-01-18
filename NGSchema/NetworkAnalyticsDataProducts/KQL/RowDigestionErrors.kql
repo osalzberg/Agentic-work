@@ -1,3 +1,0 @@
-AOIDigestion
-| where Message startswith_cs "Failed to decode row"
-| take 100

@@ -1,3 +1,0 @@
-AVSSyslog
-| where Message has "The host has entered maintenance mode"
-| take 100
