@@ -57,8 +57,33 @@ def generate_and_evaluate_query(
         gen_start = time.time()
         gen_query = generate_kql(agent, case.get("prompt", ""), model=model, system_prompt=system_prompt)
         gen_elapsed = time.time() - gen_start
+        # Preserve the raw generator output for diagnostics (may be str or dict)
         row["generated_query"] = gen_query
         row["gen_exec_stats"] = {"elapsed_sec": gen_elapsed}
+
+        # Normalize generator output to a KQL string for execution. Accept
+        # structured outputs from agents that return {kql_query, kql, query, type, ...}
+        gen_kql_str = None
+        if isinstance(gen_query, str):
+            gen_kql_str = gen_query.strip() or None
+        elif isinstance(gen_query, dict):
+            gen_kql_str = (
+                gen_query.get("kql_query")
+                or gen_query.get("kql")
+                or gen_query.get("query")
+            )
+            if isinstance(gen_kql_str, str):
+                gen_kql_str = gen_kql_str.strip() or None
+
+        # If the generator didn't produce a string, mark generation failure so
+        # callers can detect it and we do not attempt to execute a non-string.
+        if not gen_kql_str and execute:
+            row["returned_rows"] = []
+            row["returned_rows_count"] = 0
+            row["returned_exec_stats"] = {"error": "generated_query_not_string", "elapsed_sec": gen_elapsed}
+            row["status"] = "generation_failed"
+            # Short-circuit: do not attempt execution or expected query comparison
+            return row
 
         # Expected passthrough
         row["expected_query"] = case.get("expected_query")
@@ -68,7 +93,8 @@ def generate_and_evaluate_query(
 
         # Execution
         if execute:
-            gen_exec = kql_exec.execute_kql_query(gen_query)
+            # Execute the normalized KQL string rather than the raw generator output
+            gen_exec = kql_exec.execute_kql_query(gen_kql_str)
             # `execute_kql_query` returns `tables`; try to extract rows in a compatible way
             gen_tables = gen_exec.get("tables", [])
             if gen_tables and isinstance(gen_tables, list):
@@ -187,8 +213,10 @@ def generate_and_evaluate_query(
         try:
             from query_scorer import calculate_total_score
 
+            # Score should be based on the normalized KQL string (if any).
+            # Pass the raw generator output separately inside diagnostics if needed.
             llm_score = calculate_total_score(
-                generated_kql=gen_query or "",
+                generated_kql=gen_kql_str or "",
                 expected_kql=row.get("expected_query") or "",
                 generated_columns=gen_columns,
                 expected_columns=exp_columns,
@@ -197,6 +225,7 @@ def generate_and_evaluate_query(
                 prompt=case.get("prompt", ""),
                 generated_exec_stats=row.get("returned_exec_stats") or {},
                 expected_exec_stats=row.get("expected_exec_stats") or {},
+                generated_query_raw=row.get("generated_query"),
             )
             # Keep the scorer's canonical object directly
             row["score"] = llm_score
