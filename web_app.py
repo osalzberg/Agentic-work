@@ -2495,6 +2495,33 @@ def evaluate_query():
 
         execution_success = gen_err is None and exp_err is None
 
+        # Build a legacy-compatible `result` object for the UI templates.
+        # Templates expect `{ type: 'query_success' | 'query_error', kql_query, data?, error?, message? }`.
+        result_obj = None
+        gen_q_val = None
+        if isinstance(gen_q, dict):
+            gen_q_val = gen_q.get("kql_query") or gen_q.get("kql") or gen_q.get("query")
+        else:
+            gen_q_val = gen_q
+
+        if not execution_success:
+            # Prefer generated error, fallback to expected error
+            err_msg = gen_err or exp_err or "Query execution failed"
+            result_obj = {
+                "type": "query_error",
+                "kql_query": gen_q_val,
+                "error": err_msg,
+                "message": f"Query execution failed: {err_msg}",
+            }
+        else:
+            # Execution succeeded; we don't return full rows here, so surface a no-data placeholder
+            result_obj = {
+                "type": "query_success",
+                "kql_query": gen_q_val,
+                "data": {"type": "no_data", "message": "Results suppressed by server; see exec stats for counts."},
+                "message": "Query executed successfully",
+            }
+
         return jsonify(
             {
                 "success": True,
@@ -2505,6 +2532,7 @@ def evaluate_query():
                 "generated_exec_stats": gen_exec_stats,
                 "expected_exec_stats": exp_exec_stats,
                 "score": res.get("score"),
+                "result": result_obj,
             }
         )
 

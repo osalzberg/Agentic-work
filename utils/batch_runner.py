@@ -249,7 +249,9 @@ def generate_and_evaluate_query(
             # if any unexpected issue, fall back to original row
             pass
 
-        row["status"] = "success"
+        # Only mark as success when no prior failure status was set
+        if not row.get("status") or row.get("status") == "success":
+            row["status"] = "success"
         return row
 
     except Exception as ex:
