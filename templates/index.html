@@ -2030,50 +2030,14 @@
     });
     </script>
 
-            <!-- Query Section -->
-            <div class="query-section" style="display: none;">
-                <h2>💬 Ask Your Question</h2>
-                <div class="question-container">
-                    <textarea 
-                        id="questionInput" 
-                        class="question-input" 
-                        placeholder="Type your question here... (e.g., 'Show me failed requests from the last hour')"
-                    ></textarea>
-                    <button class="floating-go-btn" onclick="enhancedAskQuestion()">
-                        Go!
-                    </button>
-                </div>
-
-                <div class="suggestions" id="suggestionsContainer" style="display:none;">
-                    <h3>💡 Quick Suggestions:</h3>
-                    <div class="suggestion-pills">
-                        <div id="quickSuggestions"></div>
-                        <button type="button" class="more-suggestions-link" onclick="discoverWorkspaceExamples()" aria-label="Show more suggestions">💡 More Suggestions</button>
-                    </div>
-                </div>
-
-                <!-- Example Suggestions Section -->
-                <div id="exampleSuggestionsSection" class="example-suggestions-section" style="display: none;">
-                    <h3 id="exampleSuggestionsTitle">💡 Example Suggestions</h3>
-                    <div id="exampleSuggestionsContent" class="example-suggestions-content">
-                        <!-- Example suggestions will be populated here -->
-                    </div>
-                </div>                <!-- More Suggestions Section -->
-                <div id="workspaceExamplesSection" class="results-section" style="display: none;">
-                    <h3>� More Suggestions</h3>
-                    <div id="workspaceExamplesContent" class="result-content">
-                        <!-- Workspace examples will be populated here -->
-                    </div>
-                    <div id="workspaceTimestamp" class="timestamp"></div>                </div>
-            </div>          
-              
+            
             <!-- Batch Testing Section -->
-            <div class="query-section" style="margin-top: 30px; border-top: 3px solid #e9ecef; padding-top: 30px;">
+            <div class="query-section" style="margin-top: -60px; border-top: 3px solid #e9ecef; padding-top: 30px; width: 80%; margin-left: auto; margin-right: auto;">
                 <!-- Workspace Setup -->
 
                 <div style="margin-bottom: 18px;">
                     <label for="workspaceId" style="font-weight: 500; color: hsl(var(--foreground)); font-size: 1rem; font-family: sans-serif; margin-bottom: 6px; display: block;">Workspace ID</label>
-                    <input type="text" id="workspaceId" placeholder="Enter your Log Analytics Workspace ID" value="81a662b5-8541-481b-977d-5d956616ac5e" class="input-field" style="width: 100%; margin-bottom: 0; font-weight: 400; font-size: 0.9rem; font-family: sans-serif;">
+                    <input type="text" id="workspaceId" placeholder="Enter your Log Analytics Workspace ID" value="81a662b5-8541-481b-977d-5d956616ac5e" class="input-field" style="width: 350px; margin-bottom: 0; font-weight: 400; font-size: 0.9rem; font-family: sans-serif;">
                 </div>
                 <div style="margin-bottom: 18px;">
                     <label for="modelSelect" style="font-weight: 500; color: hsl(var(--foreground)); font-size: 1rem; font-family: sans-serif; margin-bottom: 6px; display: block;">Model</label>
@@ -2312,7 +2276,7 @@
             if (isConnected) {
                 moreSuggestionsBtn.disabled = false;
                 moreSuggestionsBtn.classList.remove('disabled');
-                moreSuggestionsBtn.onclick = discoverWorkspaceExamples;
+                moreSuggestionsBtn.onclick = null;
                 moreSuggestionsBtn.title = 'Discover more query suggestions for your workspace';
             } else {
                 moreSuggestionsBtn.disabled = true;
@@ -3111,73 +3075,13 @@ async function processQuestionWithRetry(question) {
                     block: 'start' 
                 });
             }
-        }        async function discoverWorkspaceExamples() {
-            console.log('More Suggestions button clicked'); // Debug log
-            
-            // Check if workspace is connected first
-            if (!isConnected) {
-                console.log('Workspace not connected, ignoring request');
-                return;
-            }
-            
-            // Add loading state to the more suggestions button
-            const workspaceButton = document.querySelector('.more-suggestions-link');
-            if (!workspaceButton) {
-                console.error('More suggestions button not found');
-                showError('More suggestions button not found');
-                return;
-            }
-            
-            const originalText = workspaceButton.textContent;
-            workspaceButton.textContent = '⏳ Loading...';
-            workspaceButton.style.opacity = '0.7';
-            workspaceButton.style.pointerEvents = 'none';
-            workspaceButton.disabled = true;
-            
-            // Allow workspace examples discovery even without connection
-            // since we're just showing available example files
-            
-            try {
-                console.log('Showing loading state...'); // Debug log
-                showLoading('Discovering workspace tables and available examples...');
-                
-                console.log('Making API request to /api/workspace-examples...'); // Debug log
-                const response = await fetch('/api/workspace-examples', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    }
-                });
-                
-                console.log('API response received:', response.status); // Debug log
-                
-                if (!response.ok) {
-                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-                }
-                
-                const data = await response.json();
-                console.log('API data received:', data); // Debug log
-                
-                if (data.success) {
-                    console.log('Showing workspace examples...'); // Debug log
-                    showWorkspaceExamples(data);
-                } else {
-                    console.error('API returned error:', data.error); // Debug log
-                    showError(`Failed to discover examples: ${data.error}`);
-                }
-            } catch (error) {
-                console.error('Network error occurred:', error); // Debug log
-                showError(`Network error: ${error.message}`);            } finally {
-                // Restore button state
-                const workspaceButton = document.querySelector('.more-suggestions-link');
-                if (workspaceButton) {
-                    workspaceButton.textContent = '💡 More Suggestions';
-                    workspaceButton.style.opacity = '1';
-                    workspaceButton.style.pointerEvents = 'auto';
-                    workspaceButton.disabled = false;
-                }
-            }
-        }        function getDisplayName(tableName) {
+        }
+        async function discoverWorkspaceExamples() {
+            // discoverWorkspaceExamples disabled — no-op
+            console.log('discoverWorkspaceExamples disabled');
+            return;
+        }
+        function getDisplayName(tableName) {
             const displayNameMap = {
                 'AppRequests': 'Requests',
                 'AppExceptions': 'Exceptions',
