@@ -170,6 +170,10 @@ def generate_and_evaluate_query(
         row["comparator"] = comparator
 
         # Build list-of-dict results for LLM scoring and for client display
+        # Keep full results for scoring internally, but do not return full rows
+        # in the outward-facing `row` dict to avoid leaking or sending large
+        # result sets to clients. Instead, extract columns/counts for scoring
+        # and preserve exec stats. We'll strip full row contents before return.
         gen_results = row.get("returned_rows") or []
         exp_results = row.get("expected_rows") or []
         gen_columns = []
@@ -221,6 +225,29 @@ def generate_and_evaluate_query(
                 row["zero_rows_warning"] = True
         except Exception:
             row["zero_rows_warning"] = False
+
+        # Before returning, strip full row contents to only keep counts and
+        # execution stats. This ensures API consumers receive only the number
+        # of rows and exec metadata, not the full data payload.
+        try:
+            # preserve counts and exec stats
+            returned_rows_count = row.get("returned_rows_count")
+            expected_rows_count = row.get("expected_rows_count")
+            returned_exec_stats = row.get("returned_exec_stats")
+            expected_exec_stats = row.get("expected_exec_stats")
+            # remove potentially large fields
+            if "returned_rows" in row:
+                del row["returned_rows"]
+            if "expected_rows" in row:
+                del row["expected_rows"]
+            # restore counts and exec stats (they may have been present)
+            row["returned_rows_count"] = returned_rows_count
+            row["expected_rows_count"] = expected_rows_count
+            row["returned_exec_stats"] = returned_exec_stats
+            row["expected_exec_stats"] = expected_exec_stats
+        except Exception:
+            # if any unexpected issue, fall back to original row
+            pass
 
         row["status"] = "success"
         return row

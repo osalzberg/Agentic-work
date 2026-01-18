@@ -116,3 +116,4 @@ query_evaluations/benchmark_queries/AppInsightsQueries_from_excel.csv
 query_evaluations/benchmark_queries/AppInsightsQueries_from_excel.txt
 query_evaluations/benchmark_queries/AppInsightsQueries_short.csv
 scripts/simulate_api_mapping.py
+query_evaluations/benchmark_queries/AppInsightsQueries_short.csv
