@@ -118,10 +118,4 @@ scripts/txt_to_csv_benchmark.py
 scripts/txt_to_csv_benchmark3.py
 scripts/txt_to_csv_final.py
 query_evaluations/benchmark_queries/AppInsightsQueries_short.csv
-query_evaluations/benchmark_queries/AppInsightsQueries_short.csv
 scripts/simulate_api_mapping.py
-<<<<<<< Updated upstream
-=======
-query_evaluations/benchmark_queries/AppInsightsQueries_short.csv
-query_evaluations/benchmark_queries/AppInsightsQueries_short.csv
->>>>>>> Stashed changes
