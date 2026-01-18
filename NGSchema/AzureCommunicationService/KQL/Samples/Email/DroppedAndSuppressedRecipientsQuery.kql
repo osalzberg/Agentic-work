@@ -1,3 +1,0 @@
-ACSEmailStatusUpdateOperational
-| where DeliveryStatus == "Bounced" or DeliveryStatus == "Suppressed"
-| limit 100

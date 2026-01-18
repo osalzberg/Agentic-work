@@ -1,3 +1,0 @@
-ACSCallAutomationStreamingUsage 
-    | where StreamingModality == "Transcription" 
-    | summarize NumCallsWithTranscriptionActive = dcount(CallConnectionId)

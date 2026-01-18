@@ -1,3 +1,0 @@
-AGWAccessLogs
-| summarize AggregatedValue = count() by HttpVersion
-| top 10 by AggregatedValue

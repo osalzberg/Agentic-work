@@ -1,3 +1,0 @@
-AADUserRiskEvents
-| summarize arg_max(LastUpdatedDateTime, *) by RequestId, UserId
-| where RiskState == "atRisk"

@@ -1,7 +1,92 @@
-
 from __future__ import annotations
+from typing import List
+from azure_openai_utils import OpenAIClient
+import json
 
-def fuzzy_column_alignment(expected_cols: List[str], actual_cols: List[str]) -> Dict[str, int]:
+
+def grade_semantic_similarity(expected_kql: str, generated_kql: str) -> tuple[float | None, dict]:
+    """Grade the semantic similarity between two KQL queries using LLM.
+
+    Asks the LLM to compare the queries and return a similarity score from 0.0 (completely different)
+    to 1.0 (identical), while ignoring differences in column names created by projections,
+    aggregations, or alias assignments.
+
+    Returns:
+        float: Similarity score between 0.0 and 1.0, or None if grading fails
+    """
+    if not expected_kql or not expected_kql.strip():
+        return None
+    if not generated_kql or not generated_kql.strip():
+        return None
+
+    try:
+        client = OpenAIClient()
+        system = (
+            "You are an expert KQL query evaluator. Compare two KQL queries and grade their semantic similarity "
+            "on a scale from 0.0 (completely different) to 1.0 (identical). "
+            "Ignore differences in:\n"
+            "- Column names or aliases (e.g., 'Name' vs 'PodName', 'count()' vs 'LogCount')\n"
+            "- Whitespace and formatting\n"
+            "- Comment differences\n"
+            "\n"
+            "Focus on semantic equivalence:\n"
+            "- Same source table(s)\n"
+            "- Same filtering logic\n"
+            "- Same aggregation operations (even if column names differ)\n"
+            "- Same grouping logic\n"
+            "- Same ordering logic\n"
+            "- Same limiting/top logic\n"
+            "\n"
+            "Return ONLY a single decimal number between 0.0 and 1.0, nothing else."
+        )
+
+        prompt = f"Expected query:\n{expected_kql}\n\nGenerated query:\n{generated_kql}\n\nSimilarity score:"
+
+        res = client.grade_semantic_similarity(
+            system_prompt=system,
+            summary=prompt,
+            max_tokens=500,
+            temperature=0.0,
+            top_p=0.9,
+            allow_escalation=True,
+        )
+        # res is a ChatResult
+        content = (res.content or "").strip()
+        raw = {
+            "content": res.content,
+            "error": res.error,
+            "finish_reason": res.finish_reason,
+            "attempts": res.attempts,
+            "metadata": res.metadata,
+            "raw_response": res.raw,
+        }
+
+        # Debug logging: show a short summary of the LLM response for diagnostics
+        try:
+            raw_snippet = json.dumps(res.raw, default=str)[:1000] if res.raw else ""
+        except Exception:
+            raw_snippet = str(res.raw)[:1000]
+        print(
+            f"[LLM Grading] content_len={len(content)} error={res.error} finish_reason={res.finish_reason} raw_snippet={raw_snippet}"
+        )
+
+        # Parse the score
+        try:
+            score = float(content)
+            # Clamp to valid range
+            return max(0.0, min(1.0, score)), raw
+        except ValueError:
+            print(f"[LLM Grading] Failed to parse score from response content: {content}")
+            return None, raw
+
+    except Exception as e:
+        print(f"[LLM Grading] Exception during grading: {type(e).__name__}: {e}")
+        return None, {"error": f"{type(e).__name__}: {e}"}
+
+
+def fuzzy_column_alignment(
+    expected_cols: List[str], actual_cols: List[str]
+) -> Dict[str, int]:
     """
     Returns a mapping from expected column index to actual column index using fuzzy matching.
     Only columns that can be mapped are included.
@@ -33,8 +118,9 @@ def fuzzy_column_alignment(expected_cols: List[str], actual_cols: List[str]) -> 
                     break
     return col_map
 
+
 import csv
-from typing import Any, Dict, List, Tuple, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 
 def load_csv_snapshot(path: str) -> Tuple[List[str], List[List[str]]]:
@@ -50,22 +136,24 @@ def load_csv_snapshot(path: str) -> Tuple[List[str], List[List[str]]]:
 
 def _norm_col(name: str) -> str:
     """Normalize column name: lowercase, remove spaces/hyphens/underscores, strip plural 's'."""
-    s = (name or "")
+    s = name or ""
     s = s.lower()
     # remove spaces, hyphens, and underscores
     s = s.replace(" ", "").replace("-", "").replace("_", "")
     # strip trailing 's' to handle plural/singular differences
-    if s.endswith('s') and len(s) > 1:
+    if s.endswith("s") and len(s) > 1:
         s = s[:-1]
     return s
 
 
-def compare_schema(expected_cols: List[str], actual_cols: List[str], strict_order: bool = True) -> Dict[str, Any]:
+def compare_schema(
+    expected_cols: List[str], actual_cols: List[str], strict_order: bool = True
+) -> Dict[str, Any]:
     result: Dict[str, Any] = {
         "match": False,
         "expected": expected_cols,
         "actual": actual_cols,
-        "details": {}
+        "details": {},
     }
     # Normalize column names for comparisons (ignore case, hyphens, underscores)
     exp_norm_list = [_norm_col(c) for c in expected_cols]
@@ -79,12 +167,21 @@ def compare_schema(expected_cols: List[str], actual_cols: List[str], strict_orde
     exp_count = len(exp_norm_list) or 1
     overlap_ratio = overlap_count / float(exp_count)
     # Missing: expected columns that could not be mapped
-    missing = [expected_cols[i] for i in range(len(expected_cols)) if i not in mapped_expected_idxs]
+    missing = [
+        expected_cols[i]
+        for i in range(len(expected_cols))
+        if i not in mapped_expected_idxs
+    ]
     # Extra: actual columns that were not mapped
-    extra = [actual_cols[j] for j in range(len(actual_cols)) if j not in mapped_actual_idxs]
+    extra = [
+        actual_cols[j] for j in range(len(actual_cols)) if j not in mapped_actual_idxs
+    ]
     # Match: all expected columns are mapped
     if strict_order:
-        result["match"] = exp_norm_list == [act_norm_list[col_map[i]] if i in col_map else None for i in range(len(expected_cols))]
+        result["match"] = exp_norm_list == [
+            act_norm_list[col_map[i]] if i in col_map else None
+            for i in range(len(expected_cols))
+        ]
     else:
         result["match"] = len(missing) == 0
     result["details"] = {
@@ -98,7 +195,12 @@ def compare_schema(expected_cols: List[str], actual_cols: List[str], strict_orde
     return result
 
 
-def compare_rows(expected_rows: List[List[str]], actual_rows: List[List[str]], strict_order: bool, tolerances: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+def compare_rows(
+    expected_rows: List[List[str]],
+    actual_rows: List[List[str]],
+    strict_order: bool,
+    tolerances: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
     tolerances = tolerances or {}
     numeric_abs = float(tolerances.get("numeric_abs", 0.0))
     numeric_rel = float(tolerances.get("numeric_rel", 0.0))
@@ -130,7 +232,7 @@ def compare_rows(expected_rows: List[List[str]], actual_rows: List[List[str]], s
         "expected_count": exp_count,
         "actual_count": act_count,
         "mismatches": 0,
-        "details": {}
+        "details": {},
     }
 
     # --- NEW: Fuzzy column alignment and ignore extras ---
@@ -141,7 +243,9 @@ def compare_rows(expected_rows: List[List[str]], actual_rows: List[List[str]], s
         col_map = fuzzy_column_alignment(expected_cols, actual_cols)
         mapped_expected_idxs = list(col_map.keys())
         mapped_actual_idxs = [col_map[i] for i in mapped_expected_idxs]
-        reduced_expected = [[row[i] for i in mapped_expected_idxs] for row in expected_rows]
+        reduced_expected = [
+            [row[i] for i in mapped_expected_idxs] for row in expected_rows
+        ]
         reduced_actual = [[row[j] for j in mapped_actual_idxs] for row in actual_rows]
     else:
         reduced_expected = expected_rows
@@ -159,8 +263,10 @@ def compare_rows(expected_rows: List[List[str]], actual_rows: List[List[str]], s
                 mismatches += 1
         mismatches += abs(len(reduced_expected) - len(reduced_actual))
         result["mismatches"] = mismatches
-        result["match"] = (mismatches == 0 and len(reduced_expected) == len(reduced_actual))
-        overlap_ratio = (matched / float(len(reduced_expected) or 1))
+        result["match"] = mismatches == 0 and len(reduced_expected) == len(
+            reduced_actual
+        )
+        overlap_ratio = matched / float(len(reduced_expected) or 1)
         result["details"] = {
             "matched_count": matched,
             "expected_count": len(reduced_expected),
@@ -171,8 +277,10 @@ def compare_rows(expected_rows: List[List[str]], actual_rows: List[List[str]], s
         return result
     else:
         from collections import Counter
+
         def _norm_row(r: List[str]) -> Tuple[str, ...]:
             return tuple(sorted(r))
+
         c_expected = Counter(_norm_row(r) for r in reduced_expected)
         c_actual = Counter(_norm_row(r) for r in reduced_actual)
         matched = 0
@@ -189,7 +297,11 @@ def compare_rows(expected_rows: List[List[str]], actual_rows: List[List[str]], s
         else:
             overlap_ratio = intersection / float(union)
         result["match"] = c_expected == c_actual
-        result["mismatches"] = 0 if result["match"] else abs(sum(c_expected.values()) - sum(c_actual.values()))
+        result["mismatches"] = (
+            0
+            if result["match"]
+            else abs(sum(c_expected.values()) - sum(c_actual.values()))
+        )
         result["details"] = {
             "matched_count": matched,
             "expected_count": len(reduced_expected),

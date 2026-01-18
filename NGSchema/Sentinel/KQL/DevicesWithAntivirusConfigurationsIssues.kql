@@ -1,3 +1,0 @@
-DeviceTvmSecureConfigurationAssessment
-| where ConfigurationSubcategory == 'Antivirus' and IsApplicable == 1 and IsCompliant == 0
-| take 10

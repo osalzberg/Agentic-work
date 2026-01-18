@@ -1,3 +1,0 @@
-DeviceTvmSoftwareInventory
-| where EndOfSupportStatus == 'EOS Software'
-| summarize dcount(DeviceId) by SoftwareName

@@ -1,4 +1,0 @@
-UrlClickEvents
-| where ActionType == "ClickAllowed" or IsClickedThrough !="0"
-| where ThreatTypes has "Phish"
-| summarize by ReportId, IsClickedThrough, AccountUpn, NetworkMessageId, ThreatTypes, Timestamp

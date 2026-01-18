@@ -1,3 +1,0 @@
-AVSSyslog
-| where Message has "lost connection to the host"
-| take 100

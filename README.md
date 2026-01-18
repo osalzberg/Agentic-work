@@ -2,6 +2,80 @@
 
 A comprehensive Python agent for querying Azure Monitor Log Analytics using both direct KQL and natural language (NL) questions. Features multiple interfaces including CLI, web UI, REST API, and MCP server integration for AI assistants.
 
+## Canonical exec_stats contract
+
+When a KQL execution happens the canonical response includes an `exec_stats`
+dictionary with normalized, JSON-friendly fields. Handlers and UI code should
+prefer `exec_stats['status']` (upper-case string) or the `is_success()` helper
+from `utils.kql_exec` rather than comparing SDK enums directly.
+
+Example:
+
+    "exec_stats": {
+        "status": "SUCCESS",
+        "raw_status": "LogsQueryStatus.SUCCESS",
+        "elapsed_sec": 0.12,
+        "error": null,
+        "ui_status": "success"
+    }
+
+The `ui_status` field is derived for frontend convenience and can be one of
+`success`, `failed`, `no_data`, or `error`.
+
+## Canonical `exec_stats` contract
+
+The project's canonical KQL execution helper `utils.kql_exec.execute_kql_query`
+returns a structured `exec_result` dictionary with the following shape (key
+fields shown):
+
+- `tables`: list of table dictionaries with `name`, `columns`, `rows`, and `row_count`.
+- `returned_rows_count`: integer count of rows returned across tables.
+- `exec_stats`: dictionary containing execution metadata.
+
+`exec_stats` details:
+
+- `status` (string): A normalized upper‑case string status such as
+   `"SUCCESS"`, `"FAILURE"`, or `"UNKNOWN"`. This field is safe to
+   serialize directly to JSON and include in reports.
+- `raw_status` (optional): When the Azure SDK is used, the original SDK
+   enum object (e.g. `LogsQueryStatus.SUCCESS`) is preserved here for callers
+   that need SDK-specific behavior. Most callers do not need to access this.
+- `elapsed_sec` / `error` / other fields: timing information and error details.
+
+Recommended usage patterns:
+
+- Simple check for success:
+
+   - Check the canonical status string:
+
+      ```python
+      status = exec_result.get("exec_stats", {}).get("status")
+      if status == "SUCCESS":
+            # proceed
+      ```
+
+- Robust (SDK-compatible) check using the helper:
+
+   - Import the helper and use `is_success` which accepts either the
+      normalized string or the SDK enum object:
+
+      ```python
+      from utils.kql_exec import is_success
+
+      exec_stats = exec_result.get("exec_stats", {})
+      if is_success(exec_stats.get("status") or exec_stats.get("raw_status")):
+            # proceed
+      ```
+
+Notes:
+
+- We intentionally normalize `status` to a string to simplify testing,
+   reporting, and JSON serialization. The raw SDK enum remains available as
+   `raw_status` for advanced callers.
+- If you maintain integrations that previously compared against SDK enums,
+   update them to use either the normalized string or `is_success` for
+   compatibility.
+
 ## 🌟 Features
 - **Multiple Interfaces**: CLI, Beautiful Web UI, REST API, and MCP Server
 - **Natural Language Queries**: Ask questions in plain English, get KQL results
@@ -397,6 +471,60 @@ The project now includes a structured prompt system for AKS container log analyt
  - KQL helper functions: `docs/containers_capsule/kql_functions_containerlogs.kql`
  - Ontology & semantic model: `docs/containers_capsule/container_ontology.md`
 - Prompt builder utility: `prompt_builder.py`
+
+## Canonical `exec_stats` contract
+
+The project's canonical KQL execution helper `utils.kql_exec.execute_kql_query`
+returns a structured `exec_result` dictionary with the following shape (key
+fields shown):
+
+- `tables`: list of table dictionaries with `name`, `columns`, `rows`, and `row_count`.
+- `returned_rows_count`: integer count of rows returned across tables.
+- `exec_stats`: dictionary containing execution metadata.
+
+`exec_stats` details:
+
+- `status` (string): A normalized upper‑case string status such as
+   `"SUCCESS"`, `"FAILURE"`, or `"UNKNOWN"`. This field is safe to
+   serialize directly to JSON and include in reports.
+- `raw_status` (optional): When the Azure SDK is used, the original SDK
+   enum object (e.g. `LogsQueryStatus.SUCCESS`) is preserved here for callers
+   that need SDK-specific behavior. Most callers do not need to access this.
+- `elapsed_sec` / `error` / other fields: timing information and error details.
+
+Recommended usage patterns:
+
+- Simple check for success:
+
+   - Check the canonical status string:
+
+      ```python
+      status = exec_result.get("exec_stats", {}).get("status")
+      if status == "SUCCESS":
+            # proceed
+      ```
+
+- Robust (SDK-compatible) check using the helper:
+
+   - Import the helper and use `is_success` which accepts either the
+      normalized string or the SDK enum object:
+
+      ```python
+      from utils.kql_exec import is_success
+
+      exec_stats = exec_result.get("exec_stats", {})
+      if is_success(exec_stats.get("status") or exec_stats.get("raw_status")):
+            # proceed
+      ```
+
+Notes:
+
+- We intentionally normalize `status` to a string to simplify testing,
+   reporting, and JSON serialization. The raw SDK enum remains available as
+   `raw_status` for advanced callers.
+- If you maintain integrations that previously compared against SDK enums,
+   update them to use either the normalized string or `is_success` for
+   compatibility.
 
 #### Container Examples Source Migration
 Container domain examples now load **exclusively** from the CSV file:

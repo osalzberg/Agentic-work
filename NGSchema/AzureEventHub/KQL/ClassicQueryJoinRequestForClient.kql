@@ -1,3 +1,0 @@
-AzureDiagnostics // Need to turn on the Capture for this 
-| where ResourceProvider == \"MICROSOFT.EVENTHUB\"
-|  project \"OperationName\"

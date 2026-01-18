@@ -5,6 +5,7 @@ import json
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
+
 @dataclass
 class TestItem:
     id: str
@@ -26,8 +27,10 @@ def _coerce_bool(v: Any) -> Optional[bool]:
     if v is None:
         return None
     s = str(v).strip().lower()
-    if s in ("true", "1", "yes"): return True
-    if s in ("false", "0", "no"): return False
+    if s in ("true", "1", "yes"):
+        return True
+    if s in ("false", "0", "no"):
+        return False
     return None
 
 
@@ -40,36 +43,48 @@ def load_dataset(path: str) -> List[TestItem]:
                 if not line:
                     continue
                 obj = json.loads(line)
-                items.append(TestItem(
-                    id=obj.get("id", ""),
-                    prompt=obj.get("prompt", ""),
-                    expected_kql=obj.get("expected_kql", ""),
-                    workspace_id=obj.get("workspace_id"),
-                    time_range=obj.get("time_range"),
-                    expected_output_path=obj.get("expected_output_path"),
-                    expected_output_hash=obj.get("expected_output_hash"),
-                    required_columns=obj.get("required_columns"),
-                    required_operators=obj.get("required_operators"),
-                    tolerances=obj.get("tolerances"),
-                    notes=obj.get("notes")
-                ))
+                items.append(
+                    TestItem(
+                        id=obj.get("id", ""),
+                        prompt=obj.get("prompt", ""),
+                        expected_kql=obj.get("expected_kql", ""),
+                        workspace_id=obj.get("workspace_id"),
+                        time_range=obj.get("time_range"),
+                        expected_output_path=obj.get("expected_output_path"),
+                        expected_output_hash=obj.get("expected_output_hash"),
+                        required_columns=obj.get("required_columns"),
+                        required_operators=obj.get("required_operators"),
+                        tolerances=obj.get("tolerances"),
+                        notes=obj.get("notes"),
+                    )
+                )
     elif path.lower().endswith(".csv"):
         with open(path, "r", encoding="utf-8") as f:
             reader = csv.DictReader(f)
             for obj in reader:
-                items.append(TestItem(
-                    id=obj.get("id", ""),
-                    prompt=obj.get("prompt", ""),
-                    expected_kql=obj.get("expected_kql", ""),
-                    workspace_id=obj.get("workspace_id"),
-                    time_range=obj.get("time_range"),
-                    expected_output_path=obj.get("expected_output_path"),
-                    expected_output_hash=obj.get("expected_output_hash"),
-                    required_columns=(obj.get("required_columns") or "").split("|") if obj.get("required_columns") else None,
-                    required_operators=(obj.get("required_operators") or "").split("|") if obj.get("required_operators") else None,
-                    tolerances=json.loads(obj.get("tolerances") or "{}"),
-                    notes=obj.get("notes")
-                ))
+                items.append(
+                    TestItem(
+                        id=obj.get("id", ""),
+                        prompt=obj.get("prompt", ""),
+                        expected_kql=obj.get("expected_kql", ""),
+                        workspace_id=obj.get("workspace_id"),
+                        time_range=obj.get("time_range"),
+                        expected_output_path=obj.get("expected_output_path"),
+                        expected_output_hash=obj.get("expected_output_hash"),
+                        required_columns=(
+                            (obj.get("required_columns") or "").split("|")
+                            if obj.get("required_columns")
+                            else None
+                        ),
+                        required_operators=(
+                            (obj.get("required_operators") or "").split("|")
+                            if obj.get("required_operators")
+                            else None
+                        ),
+                        tolerances=json.loads(obj.get("tolerances") or "{}"),
+                        notes=obj.get("notes"),
+                    )
+                )
     else:
         raise ValueError(f"Unsupported dataset format: {path}")
     return items

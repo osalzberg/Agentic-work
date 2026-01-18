@@ -8,17 +8,24 @@ The batch testing system now includes a comprehensive scoring mechanism that eva
 <br>
 
 ## Scoring Components
-The total score is calculated from 2 equally-weighted components, each contributing 50% to the final score:
 
-### 1. Query Similarity Score (50%)
+### Total Score Calculation
+The total score is calculated from 2 equally-weighted components: , each contributing 50% to the final score:
+- Query semantics score (50%)
+- Results Match Score (50%)
+
+<br>
+
+### 1. Query Semantics Score (50%)
 #### Purpose
-Evaluate the generated query against the expected query. Evaludation is done by LLM
+Evaluate the generated query against the expected query. Evaludation is done by LLM.
 
 #### Process
 1. Sends both queries and the user prompt to the LLM
 2. LLM evaluates correctness, logic, and efficiency
-3. Returns a score (0-1) with reasoning
-**Evaluation Criteria:**
+3. Returns a score (0-1)
+
+#### Evaluation Criteria
 - Correct table selection
 - Appropriate filters
 - Proper aggregations/transformations
@@ -38,18 +45,6 @@ Compares the actual data returned by both queries, including both schema (column
 - Normalizes values (lowercase keys, string values) for comparison
 - Counts how many expected rows are found in generated results
 
-<br>
-
-### Total Score Calculation
-
-```
-total_score = (query_similarity_score * 0.5) + 
-              (results_match_score * 0.5)
-```
-
-
-**Success Threshold:** total_score >= 0.9 (90%)
-
 <br><br>
 
 ## Example Scenarios
@@ -58,7 +53,7 @@ total_score = (query_similarity_score * 0.5) +
 Generated: Traces | where timestamp > ago(1h) | summarize count() by level
 Expected:  Traces | where timestamp > ago(1h) | summarize count() by level
 
-* Query Similarity: 100% (exact match)
+* Query Semantics: 100% (exact match)
 * Results Match: 100% (identical data and columns)
 * Total: 100% → PASS
 ```
@@ -70,7 +65,7 @@ Expected:  Traces | where timestamp > ago(1h) | summarize count() by level
 Generated: Traces | where timestamp > ago(1h) | project timestamp, level, message
 Expected:  Traces | where timestamp > ago(60m) | project timestamp, level, message
 
-* Query Similarity: 95% (recognizes equivalence)
+* Query Semantics: 95% (recognizes equivalence)
 * Results Match: 100% (same data)
 * Total: 97.5% → PASS
 ```
@@ -82,7 +77,7 @@ Expected:  Traces | where timestamp > ago(60m) | project timestamp, level, messa
 Generated: AppTraces | where timestamp > ago(1h) | summarize count()
 Expected:  Traces | where timestamp > ago(1h) | summarize count() by level
 
-* Query Similarity: 60% (wrong approach)
+* Query Semantics: 60% (wrong approach)
 * Results Match: 30% (different data structure)
 * Total: 45% → FAIL
 ```

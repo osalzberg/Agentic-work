@@ -1,3 +1,0 @@
-ASimDnsActivityLogs
-| where EventType == 'Query' and EventResult == 'Failure'
-| summarize count() by SrcIpAddr, EventResultDetails
