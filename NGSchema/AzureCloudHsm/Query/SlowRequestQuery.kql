@@ -1,4 +1,0 @@
-let threshold=1000;
-CloudHsmServiceOperationAuditLogs
-| where DurationMs > threshold
-| summarize count() by OperationName, _ResourceId

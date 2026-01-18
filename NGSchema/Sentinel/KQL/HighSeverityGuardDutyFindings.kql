@@ -1,3 +1,0 @@
-AWSGuardDuty
-| where Severity > 7
-| summarize count() by ActivityType

@@ -1,3 +1,0 @@
-EmailPostDeliveryEvents
-| where ActionTrigger == 'AdminAction'
-| take 100 

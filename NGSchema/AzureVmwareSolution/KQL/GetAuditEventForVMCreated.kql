@@ -1,3 +1,0 @@
-AVSSyslog
-| where Message has "vmcreatedevent" 
-| take 100

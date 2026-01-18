@@ -1,4 +1,0 @@
-AVSSyslog
-| where AppName == "dnsmasq" // do some initial filtering to optimize 'has'
-| where Message has "Failed DNS Query" // filter to only Failed DNS Query messages
-| take 100

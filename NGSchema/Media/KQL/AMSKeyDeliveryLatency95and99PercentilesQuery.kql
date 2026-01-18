@@ -1,2 +1,0 @@
-AMSKeyDeliveryRequests
-| summarize percentiles(DurationMs, 95, 99)

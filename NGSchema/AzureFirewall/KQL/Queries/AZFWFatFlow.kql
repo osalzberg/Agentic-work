@@ -1,5 +1,0 @@
-// Get the fatflows from past 1000 samples with rate atleast 5 mbps
-AZFWFatFlow
-| take 1000
-| order by TimeGenerated desc
-| where FlowRate > 5

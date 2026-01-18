@@ -1,8 +1,0 @@
-source
-| project
-TimeGenerated = todatetime(['time']),
-Category = category,
-OperationName = operationName,
-Content = tostring(properties.message),
-Namespace = tostring(properties.namespace),
-Location = location

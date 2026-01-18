@@ -1,4 +1,0 @@
-GCPAuditLogs
-| where  GCPResourceType == 'pubsub_subscription'
-| where  severity == 'INFO'
-| limit 100

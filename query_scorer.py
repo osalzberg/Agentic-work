@@ -3,20 +3,22 @@ Query Scorer - Evaluates generated KQL queries against expected queries
 Uses the mature query_evaluations system for consistent scoring.
 """
 
-from typing import Dict, List, Any, Tuple
-import sys
 import os
+import sys
+from typing import Any, Dict, List, Tuple
 
 # Add query_evaluations to path
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'query_evaluations'))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "query_evaluations"))
 
-from comparator import compare_schema, compare_rows  # type: ignore
-from kql_parser import compare_kql_semantic  # type: ignore
-from explainer import grade_kql_similarity  # type: ignore
-from scorer import score_test, DEFAULT_WEIGHTS  # type: ignore
+from query_evaluations.comparator import (compare_rows,  # type: ignore
+                                          compare_schema,
+                                          grade_semantic_similarity)
 
 
-def calculate_llm_graded_score(generated_kql: str, expected_kql: str, prompt: str) -> Tuple[float, Dict]:
+
+def calculate_llm_graded_score(
+    generated_kql: str, expected_kql: str, prompt: str
+) -> Tuple[float, Dict]:
     """
     Use LLM to grade the generated query against expected query.
     Returns score 0-1.
@@ -24,29 +26,41 @@ def calculate_llm_graded_score(generated_kql: str, expected_kql: str, prompt: st
     """
     if not expected_kql or not generated_kql:
         return 0.0, {"reason": "Missing query for comparison"}
-    
+
     try:
         # Get the actual model deployment being used
         from azure_openai_utils import load_config
+
         config = load_config()
         actual_model = config.deployment if config else "unknown"
-        
+
         # Use query_evaluations LLM grading (uses same OpenAI config as query generation)
-        score = grade_kql_similarity(expected_kql, generated_kql)
-        
+        score, raw = grade_semantic_similarity(expected_kql, generated_kql)
+
         if score is None:
-            return 0.5, {"error": "LLM grading failed", "score": 0.5, "reasoning": "Error during grading, assigned neutral score"}
-        
-        details = {
-            "score": score,
-            "model": actual_model
-        }
-        
+            # Log raw grading response for diagnostics
+            print(
+                "[calculate_llm_graded_score] LLM grading returned None. Raw response:",
+                raw,
+            )
+            return 0.5, {
+                "error": "LLM grading failed",
+                "score": 0.5,
+                "reasoning": "Error during grading, assigned neutral score",
+                "raw": raw,
+            }
+
+        details = {"score": score, "model": actual_model, "raw": raw}
+
         return score, details
-        
+
     except Exception as e:
         print(f"Error in LLM grading: {e}")
-        return 0.5, {"error": str(e), "score": 0.5, "reasoning": "Error during grading, assigned neutral score"}
+        return 0.5, {
+            "error": str(e),
+            "score": 0.5,
+            "reasoning": "Error during grading, assigned neutral score",
+        }
 
 
 def calculate_total_score(
@@ -56,194 +70,191 @@ def calculate_total_score(
     expected_columns: List[str],
     generated_results: List[Dict],
     expected_results: List[Dict],
-    prompt: str
+    prompt: str,
+    *,
+    generated_exec_stats: Dict[str, Any] | None = None,
+    expected_exec_stats: Dict[str, Any] | None = None,
 ) -> Dict[str, Any]:
     """
     Calculate total score using query_evaluations scoring system.
     Uses the same Azure OpenAI deployment as query generation for LLM grading.
-    
+
     Weights:
-    - results_match: 0.55 (combines schema and rows match)
-    - structural_similarity: 0.15
-    - llm_graded_similarity: 0.30
-    
+    - results_match: 0.5 (combines schema and rows match)
+    - llm_graded_similarity: 0.5
+
     Note: Execution success is a gate (if execution fails, categorized as "Failed" with NA scores)
     Success threshold: weighted score >= 0.9
     """
-    
-    # Check if prompt explicitly mentions specific fields/columns
-    prompt_lower = prompt.lower()
-    fields_explicitly_requested = any(
-        keyword in prompt_lower 
-        for keyword in ['show', 'display', 'project', 'select', 'return', 'get', 'include']
-    ) and any(
-        field_keyword in prompt_lower
-        for field_keyword in ['field', 'column', 'property', 'attribute']
+
+    # Compute results/schema matching using deterministic comparators
+    # --- Guard: if generated_kql is not a string (e.g., an object with an execution error),
+    # or if execution produced an error recorded in exec_stats, treat as execution failure
+    # and return a deterministic failed score instead of neutral fallbacks.
+    if not isinstance(generated_kql, str):
+        # Try to pull an error message if available
+        gen_err = None
+        try:
+            gen_err = getattr(generated_kql, "get", lambda k, d=None: d)("error", None) if hasattr(generated_kql, "get") else None
+        except Exception:
+            gen_err = None
+        diag = {"reason": "generated_query_not_string", "generated_query_raw": str(generated_kql), "error": gen_err}
+        components = {
+            "query_similarity": {
+                "score": 0.0,
+                "weight": 0.5,
+                "weighted_score": 0.0,
+                "explanation": "Generated query failed to produce a KQL string (execution or generation error)",
+            },
+            "results_match": {
+                "score": 0.0,
+                "weight": 0.5,
+                "weighted_score": 0.0,
+                "components": {
+                    "schema_match": {"score": 0.0, "explanation": "Execution failed"},
+                    "rows_match": {"score": 0.0, "explanation": "Execution failed"},
+                },
+            },
+        }
+        return {
+            "total_score": 0.0,
+            "is_successful": False,
+            "threshold": 0.9,
+            "weights": {"results_match": 0.5, "query_similarity": 0.5},
+            "components": components,
+            "query_similarity": 0.0,
+            "results_match": 0.0,
+            "diagnostics": diag,
+        }
+
+    # If execution stats indicate an error, treat as failure
+    if generated_exec_stats and isinstance(generated_exec_stats, dict):
+        err = generated_exec_stats.get("error") or generated_exec_stats.get("message")
+        status = str(generated_exec_stats.get("status") or "").lower()
+        if err or status in ("failed", "error", "error_message"):
+            diag = {"reason": "generated_execution_error", "exec_stats": generated_exec_stats}
+            components = {
+                "query_similarity": {
+                    "score": 0.0,
+                    "weight": 0.5,
+                    "weighted_score": 0.0,
+                    "explanation": "Generated query execution failed",
+                },
+                "results_match": {
+                    "score": 0.0,
+                    "weight": 0.5,
+                    "weighted_score": 0.0,
+                    "components": {
+                        "schema_match": {"score": 0.0, "explanation": "Execution failed"},
+                        "rows_match": {"score": 0.0, "explanation": "Execution failed"},
+                    },
+                },
+            }
+            return {
+                "total_score": 0.0,
+                "is_successful": False,
+                "threshold": 0.9,
+                "weights": {"results_match": 0.5, "query_similarity": 0.5},
+                "components": components,
+                "query_similarity": 0.0,
+                "results_match": 0.0,
+                "diagnostics": diag,
+            }
+    try:
+        schema_result = compare_schema(
+            expected_columns or [], generated_columns or [], strict_order=False
+        )
+    except Exception as e:
+        schema_result = {"details": {"overlap_ratio": 0.0}, "match": False}
+
+    # Build row matrices (lists of lists) from dict rows using provided column orders
+    def _rows_from_dicts(rows: List[Dict], cols: List[str]) -> List[List[str]]:
+        out: List[List[str]] = []
+        if not rows:
+            return out
+        for r in rows:
+            row_vals = [
+                str(r.get(c, "")) if isinstance(r, dict) else str(r) for c in cols
+            ]
+            out.append(row_vals)
+        return out
+
+    expected_row_matrix = _rows_from_dicts(
+        expected_results or [], expected_columns or []
     )
-    
-    # Check if queries involve aggregation (summarize) - different column names are acceptable
-    is_aggregation = 'summarize' in expected_kql.lower() or 'summarize' in generated_kql.lower()
-    
-    # Check if both queries use bin() with potentially different bin sizes
-    import re
-    expected_bin_match = re.search(r'bin\s*\([^,]+,\s*([^)]+)\)', expected_kql, re.IGNORECASE)
-    generated_bin_match = re.search(r'bin\s*\([^,]+,\s*([^)]+)\)', generated_kql, re.IGNORECASE)
-    
-    different_bin_sizes = False
-    if expected_bin_match and generated_bin_match:
-        expected_bin_size = expected_bin_match.group(1).strip()
-        generated_bin_size = generated_bin_match.group(1).strip()
-        if expected_bin_size != generated_bin_size:
-            different_bin_sizes = True
-            print(f"[SCORING] Detected different bin sizes: expected={expected_bin_size}, generated={generated_bin_size}")
-    
-    # 1. Schema match using query_evaluations comparator
-    schema_match = compare_schema(expected_columns, generated_columns, strict_order=False)
-    schema_score = schema_match.get("details", {}).get("overlap_ratio", 0.0)
-    
-    # If fields weren't explicitly requested, don't penalize for extra columns
-    if not fields_explicitly_requested:
-        missing_cols = schema_match.get("details", {}).get("missing", [])
-        extra_cols = schema_match.get("details", {}).get("extra", [])
-        
-        if extra_cols and not missing_cols:
-            # Generated query has all expected columns plus more - give full score
-            schema_score = 1.0
-            print(f"[SCORING] Extra columns present but fields not explicitly requested - no penalty")
-        elif extra_cols and missing_cols:
-            # Some expected columns missing, but has extras - only penalize for missing
-            exp_count = len(expected_columns)
-            matched_count = exp_count - len(missing_cols)
-            schema_score = matched_count / exp_count if exp_count > 0 else 1.0
-            print(f"[SCORING] Fields not explicitly requested - scoring based only on expected columns present")
-    
-    # For aggregation queries, if column counts match, boost schema score
-    # (aggregated column names often differ but semantics are preserved)
-    if is_aggregation and len(expected_columns) == len(generated_columns):
-        # Give partial credit if column counts match even if names differ
-        if schema_score < 0.5:
-            schema_score = max(schema_score, 0.7)  # Boost to 0.7 minimum for matching column count
-    
-    # 2. Rows match using query_evaluations comparator (order-insensitive)
-    # Convert dict results to list-of-lists format
-    def dict_to_rows(results: List[Dict], columns: List[str]) -> List[List[str]]:
-        rows = []
-        for row_dict in results:
-            row = [str(row_dict.get(col, "")) for col in columns]
-            rows.append(row)
-        return rows
-    
-    # For aggregation with different column names, align by position instead of name
-    if is_aggregation and expected_results and generated_results and len(expected_columns) == len(generated_columns):
-        # Extract values by position, not by column name
-        expected_rows = [[str(v) for v in row_dict.values()] for row_dict in expected_results]
-        generated_rows = [[str(v) for v in row_dict.values()] for row_dict in generated_results]
-    elif not fields_explicitly_requested and len(generated_columns) > len(expected_columns):
-        # If fields weren't explicitly requested and generated has extra columns,
-        # only compare the expected columns (ignore extra columns in comparison)
-        expected_rows = dict_to_rows(expected_results, expected_columns) if expected_results else []
-        generated_rows = dict_to_rows(generated_results, expected_columns) if generated_results else []
-        print(f"[SCORING] Comparing only expected columns ({len(expected_columns)}) since fields not explicitly requested")
-    else:
-        expected_rows = dict_to_rows(expected_results, expected_columns) if expected_results else []
-        generated_rows = dict_to_rows(generated_results, generated_columns) if generated_results else []
-    
-    # If both queries use bin() with different sizes, mark rows_match as N/A
-    rows_score_na = False
-    if different_bin_sizes:
-        rows_score = None  # Mark as N/A
-        rows_score_na = True
-        rows_match = {"match": False, "details": {"note": "Different bin sizes - results not comparable"}}
-    else:
-        # Custom row count comparison with 1% tolerance that penalizes both missing and extra rows
-        expected_count = len(expected_rows)
-        generated_count = len(generated_rows)
-        
-        # Check if row counts are within 1% tolerance
-        count_tolerance = max(1, int(expected_count * 0.01))  # At least 1 row tolerance
-        count_diff = abs(expected_count - generated_count)
-        
-        if count_diff <= count_tolerance:
-            # Counts are close enough, use standard row comparison
-            rows_match = compare_rows(expected_rows, generated_rows, strict_order=False)
-            rows_score = rows_match.get("details", {}).get("overlap_ratio", 0.0)
-        else:
-            # Row counts differ significantly - penalize proportionally
-            rows_match = compare_rows(expected_rows, generated_rows, strict_order=False)
-            base_overlap = rows_match.get("details", {}).get("overlap_ratio", 0.0)
-            
-            # Penalty factor based on how far off the count is
-            # If generated has more rows: penalty = expected / generated
-            # If generated has fewer rows: penalty = generated / expected
-            if expected_count > 0:
-                count_penalty = min(expected_count, generated_count) / max(expected_count, generated_count)
-            else:
-                count_penalty = 0.0
-            
-            # Apply both overlap quality and count penalty
-            rows_score = base_overlap * count_penalty
-            
-            rows_match["details"]["count_penalty"] = count_penalty
-            rows_match["details"]["expected_count"] = expected_count
-            rows_match["details"]["generated_count"] = generated_count
-            rows_match["details"]["count_diff"] = count_diff
-    
-    # 3. LLM grading (uses same Azure OpenAI deployment as query generation)
-    query_similarity, query_similarity_details = calculate_llm_graded_score(generated_kql, expected_kql, prompt)
+    generated_row_matrix = _rows_from_dicts(
+        generated_results or [], generated_columns or []
+    )
 
-    # Combine schema and rows into results_match (weighted average within the component)
-    # Results match: 50% schema + 50% rows (when rows available)
-    if rows_score_na:
-        # If rows N/A due to different bin sizes, use only schema for results_match
-        results_match_score = schema_score
-        print(f"[SCORING] rows_match=N/A (different bin sizes), using schema_score only for results_match")
-    else:
-        # Combine schema and rows equally
-        results_match_score = 0.5 * schema_score + 0.5 * rows_score
+    # attach column context so compare_rows can do fuzzy alignment
+    try:
+        compare_rows.expected_cols = expected_columns or []
+        compare_rows.actual_cols = generated_columns or []
+        rows_result = compare_rows(
+            expected_row_matrix, generated_row_matrix, strict_order=False
+        )
+    except Exception as e:
+        rows_result = {"details": {"overlap_ratio": 0.0}, "match": False}
 
-    # New weights: results_match (50%), LLM (50%)
-    # Execution success is not part of the score - it's a gate
-    weights = {
-        "results_match": 0.5,
-        "query_similarity": 0.5,
-    }
+    # Extract deterministic metrics (0..1)
+    schema_overlap = float(
+        schema_result.get("details", {}).get("overlap_ratio", 0.0) or 0.0
+    )
+    rows_overlap = float(
+        rows_result.get("details", {}).get("overlap_ratio", 0.0) or 0.0
+    )
 
-    # Build metrics dict for scoring with new structure
-    metrics = {
-        "results_match": results_match_score,
-        "query_similarity": query_similarity,
-    }
+    # Combine schema + rows into a results_match metric (simple average)
+    results_match_score = (schema_overlap + rows_overlap) / 2.0
 
-    # Calculate weighted score
-    total_score = score_test(metrics, weights)
+    # LLM graded similarity applies only to the query semantic similarity
+    query_similarity, llm_details = calculate_llm_graded_score(
+        generated_kql, expected_kql, prompt
+    )
+    if query_similarity is None:
+        query_similarity = 0.5
 
-    # Success threshold: 0.9
+    # Weights: split equally between deterministic results_match and LLM query similarity
+    results_weight = 0.5
+    query_weight = 0.5
+
+    # Compose total weighted score
+    total_score = (results_match_score * results_weight) + (
+        float(query_similarity) * query_weight
+    )
     is_successful = total_score >= 0.9
 
+    # Build canonical score object with normalized components (Pattern 1)
+    components = {
+        "query_similarity": {
+            "score": round(float(query_similarity), 3),
+            "weight": query_weight,
+            "weighted_score": round(float(query_similarity) * query_weight, 3),
+        },
+        "results_match": {
+            "score": round(results_match_score, 3),
+            "weight": results_weight,
+            "weighted_score": round(results_match_score * results_weight, 3),
+            "components": {
+                "schema_match": {
+                    "score": round(schema_overlap, 3),
+                    "explanation": "Numeric schema overlap (details omitted)",
+                },
+                "rows_match": {
+                    "score": round(rows_overlap, 3),
+                    "explanation": "Numeric rows overlap (details omitted)",
+                },
+            },
+        },
+    }
+
+    # Return a compact score object; do not include raw comparator dicts (schema_result/rows_result)
     return {
-        "total_score": round(total_score, 3),
+        "total_score": round(float(total_score), 3),
         "is_successful": is_successful,
         "threshold": 0.9,
-        "weights": weights,
-        "components": {
-            "results_match": {
-                "score": round(results_match_score, 3),
-                "weighted_score": round(results_match_score * weights["results_match"], 3),
-                "weight": weights["results_match"],
-                "details": {
-                    "schema_score": round(schema_score, 3),
-                    "rows_score": None if rows_score_na else round(rows_score, 3),
-                    "rows_na": rows_score_na,
-                    "schema_details": schema_match.get("details", {}),
-                    "rows_details": rows_match.get("details", {})
-                }
-            },
-            "query_similarity": {
-                "score": round(query_similarity, 3),
-                "weighted_score": round(query_similarity * weights["query_similarity"], 3),
-                "weight": weights["query_similarity"],
-                "details": query_similarity_details
-            }
-        },
-        "query_similarity": query_similarity
+        "weights": {"results_match": results_weight, "query_similarity": query_weight},
+        "components": components,
+        "query_similarity": float(query_similarity),
+        "results_match": float(results_match_score),
     }

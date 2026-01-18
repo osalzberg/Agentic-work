@@ -1,4 +1,0 @@
-AKSAuditAdmin
-| where ResponseStatus.code != 401  // Exclude unauthorized responses
-| summarize Count = count() by Username = tostring(User.username), ResourceId = _ResourceId
-| sort by Count desc

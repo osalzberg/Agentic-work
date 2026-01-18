@@ -1,3 +1,0 @@
-ANFFileAccess
-| where OperationName == "Unlink Object"
-| limit 100

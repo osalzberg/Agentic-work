@@ -1,3 +1,0 @@
-DataverseActivity
-| where Message == "Create"
-| summarize count() by EntityName

@@ -1,5 +1,13 @@
+<<<<<<< Updated upstream
 Prompt,Query
 what are the top 3 failed response codes in the last week?,"AppRequests| where TimeGenerated > ago(7d) | where Success == false | summarize _count=sum(ItemCount) by ResultCode | top 3 by _count | sort by _count desc"
 What are the 5 most common exceptions?,"AppExceptions | summarize _count=sum(ItemCount) by ExceptionType | top 5 by _count | sort by _count desc"
 Which operations failed in the last day,"AppRequests | where TimeGenerated > ago(1d) | summarize failedCount=sumif(ItemCount, Success == false) by OperationName"
 Failed operations in the past day and how many users were impacted,"AppRequests | where TimeGenerated > ago(1d) | where Success == false | summarize impactedUsers=dcount(User_Id) by OperationName"
+count requests by URL,"AppRequests | summarize count() by Url"
+Count exceptions by outer message and operation and role,"AppExceptions | summarize count() by OuterMessage, OperationName, AppRoleName"
+=======
+Prompt,Query
+What are the 5 most common exceptions?,"AppExceptions | summarize _count=sum(ItemCount) by ExceptionType | top 5 by _count | sort by _count desc"
+Failed operations in the past day and how many users were impacted,"AppRequests | where TimeGenerated > ago(1d) | where Success == false | summarize impactedUsers=dcount(User_Id) by OperationName"
+>>>>>>> Stashed changes

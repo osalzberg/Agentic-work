@@ -74,6 +74,9 @@ instance/
 claude_desktop_config.json
 AI_INSTRUCTIONS.md
 
+# Schema files (large, not needed at runtime)
+NGSchema/
+
 # Temporary files
 test_*.py
 debug_*.py
@@ -111,3 +114,5 @@ scripts/inspect_lines.py
 scripts/_diff_templates.py
 query_evaluations/benchmark_queries/AppInsightsQueries_from_excel.csv
 query_evaluations/benchmark_queries/AppInsightsQueries_from_excel.txt
+query_evaluations/benchmark_queries/AppInsightsQueries_short.csv
+scripts/simulate_api_mapping.py

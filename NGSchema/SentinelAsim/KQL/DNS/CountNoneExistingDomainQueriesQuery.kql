@@ -1,4 +1,0 @@
-ASimDnsActivityLogs
-| where EventResultDetails == 'NXDOMAIN'
-| summarize c=count() by SrcIpAddr
-| where c > 100

@@ -1,8 +1,0 @@
-source
-| project
-    TimeGenerated = ["time"],
-    UserName = UserName,
-    Status = Status,
-    ClusterDnsName = ClusterDnsName,
-    AccessRequestCount = AccessRequestCount,
-    ErrorMessage = ErrorMessage

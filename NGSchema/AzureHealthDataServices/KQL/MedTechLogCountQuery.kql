@@ -1,2 +1,0 @@
-AHDSMedTechDiagnosticLogs
-| summarize Count = count() by LogType, OperationName

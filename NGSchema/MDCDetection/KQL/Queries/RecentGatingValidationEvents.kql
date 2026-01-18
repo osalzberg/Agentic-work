@@ -1,4 +1,0 @@
-MDCDetectionGatingValidationEvents
-| where TimeGenerated > ago(24h)
-| order by TimeGenerated
-| limit 100

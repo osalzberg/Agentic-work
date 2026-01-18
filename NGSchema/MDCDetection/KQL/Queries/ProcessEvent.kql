@@ -1,4 +1,0 @@
-MDCDetectionProcessV2Events
-| where TimeCreatedUtc > ago(24h)
-| order by TimeCreatedUtc
-| limit 100

@@ -1,4 +1,0 @@
-// Last heartbeat of each computer 
-// Show the last heartbeat sent by each computer. 
-Heartbeat
-| summarize arg_max(TimeGenerated, *) by Computer
