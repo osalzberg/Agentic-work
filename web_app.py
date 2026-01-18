@@ -1731,8 +1731,8 @@ def setup_workspace():
         # Get user token from Azure AD authentication if available
         user_token = get_user_token()
         
-        # Initialize agent with optional user token
-        agent = KQLAgent(workspace_id, user_token=user_token)
+        # Initialize agent (do not pass user_token to KQLAgent constructor)
+        agent = KQLAgent(workspace_id)
         # Intentionally do NOT start schema fetch here to allow client to trigger and observe pending state
         print(
             "[Setup] Workspace initialized; schema fetch will start on first /api/workspace-schema request."
@@ -2426,11 +2426,11 @@ def evaluate_query():
             )
 
         data = request.get_json()
-        prompt = data.get("prompt", "").strip()
+        prompt = (data.get("prompt") or "").strip()
         generated_query = data.get("generated_query")
         if isinstance(generated_query, str):
             generated_query = generated_query.strip()
-        expected_query = data.get("expected_query", "").strip()
+        expected_query = (data.get("expected_query") or "").strip()
         model = data.get("model")  # Optional model override
         system_prompt = data.get("system_prompt")  # Optional system prompt override
 
