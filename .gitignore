@@ -106,9 +106,6 @@ app_insights_capsule/benchmark_queries.csv
 query_evaluations/benchmark_queries/AppInsightsQueries_from_excel.csv
 query_evaluations/benchmark_queries/AppInsightsQueries_from_excel.txt
 query_evaluations/benchmark_queries/AppInsightsQueries_short.csv
-query_evaluations/benchmark_queries/AppInsightsQueries_short.csv
-query_evaluations/benchmark_queries/AppInsightsQueries_short.csv
-query_evaluations/benchmark_queries/AppInsightsQueries_short.csv
 scripts/_diff_templates.py
 scripts/inspect_lines.py
 scripts/show_tab_lines.py
@@ -117,5 +114,4 @@ scripts/test_output.xlsx
 scripts/txt_to_csv_benchmark.py
 scripts/txt_to_csv_benchmark3.py
 scripts/txt_to_csv_final.py
-query_evaluations/benchmark_queries/AppInsightsQueries_short.csv
 scripts/simulate_api_mapping.py
