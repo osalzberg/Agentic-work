@@ -6,6 +6,22 @@ import utils.kql_exec as kql_exec
 from query_evaluations.comparator import compare_rows, compare_schema
 
 
+def _normalize_kql(kql_text: Optional[str]) -> Optional[str]:
+    """Normalize a KQL string for execution by unescaping common escape sequences.
+
+    Currently this converts \" -> " and \' -> '. Keep this function small and
+    conservative to avoid changing intended queries; adjust if you see more
+    patterns in the wild.
+    """
+    if not isinstance(kql_text, str):
+        return kql_text
+    try:
+        s = kql_text.replace('\\"', '"').replace("\\'", "'")
+        return s
+    except Exception:
+        return kql_text
+
+
 def generate_and_evaluate_query(
     case: Dict[str, Any],
     *,
@@ -51,12 +67,28 @@ def generate_and_evaluate_query(
 
     row: Dict[str, Any] = {"prompt_id": case.get("id"), "prompt": case.get("prompt")}
     try:
+
+        # Expected query passthrough (we now execute the expected query first)
+        row["expected_query"] = case.get("expected_query")
+        row["expected_rows_count"] = case.get("expected_rows_count") or (
+            len(case.get("expected_rows", [])) if case.get("expected_rows") else None
+        )
+
+        # Prepare expected placeholders
+        row["expected_rows"] = []
+        row["expected_exec_stats"] = {}
+
         # Generation (use shared helper to match /api/generate-kql behavior)
         from utils.generator import generate_kql
 
         gen_start = time.time()
-        gen_query = generate_kql(agent, case.get("prompt", ""), model=model, system_prompt=system_prompt)
-        gen_elapsed = time.time() - gen_start
+        # If caller supplied a generated_query (e.g., via API), honor it and skip regeneration.
+        if case.get("generated_query") is not None:
+            gen_query = case.get("generated_query")
+            gen_elapsed = 0.0
+        else:
+            gen_query = generate_kql(agent, case.get("prompt", ""), model=model, system_prompt=system_prompt)
+            gen_elapsed = time.time() - gen_start
         # Preserve the raw generator output for diagnostics (may be str or dict)
         row["generated_query"] = gen_query
         row["gen_exec_stats"] = {"elapsed_sec": gen_elapsed}
@@ -75,8 +107,14 @@ def generate_and_evaluate_query(
             if isinstance(gen_kql_str, str):
                 gen_kql_str = gen_kql_str.strip() or None
 
-        # If the generator didn't produce a string, mark generation failure so
-        # callers can detect it and we do not attempt to execute a non-string.
+        # If the generator explicitly returned an error-type payload, do not execute
+        if isinstance(gen_query, dict) and (gen_query.get("type") or "").lower() == "query_error":
+            row["returned_rows"] = []
+            row["returned_rows_count"] = 0
+            row["returned_exec_stats"] = {"error": gen_query.get("error") or gen_query.get("message") or "generation_error", "elapsed_sec": gen_elapsed}
+            row["status"] = "generation_failed"
+            return row
+
         if not gen_kql_str and execute:
             row["returned_rows"] = []
             row["returned_rows_count"] = 0
@@ -85,20 +123,20 @@ def generate_and_evaluate_query(
             # Short-circuit: do not attempt execution or expected query comparison
             return row
 
-        # Expected passthrough
+        # Expected passthrough (preserve counts provided by the case)
         row["expected_query"] = case.get("expected_query")
         row["expected_rows_count"] = case.get("expected_rows_count") or (
             len(case.get("expected_rows", [])) if case.get("expected_rows") else None
         )
 
-        # Execution
+        # Execution: run the generated query first (server-side). If generated
+        # execution fails, do not run the expected query. Only if the generated
+        # execution succeeds do we proceed to run the expected query.
         if execute:
-            # Execute the normalized KQL string rather than the raw generator output
-            gen_exec = kql_exec.execute_kql_query(gen_kql_str)
-            # `execute_kql_query` returns `tables`; try to extract rows in a compatible way
+            # Execute generated query on server
+            gen_exec = kql_exec.execute_kql_query(_normalize_kql(gen_kql_str))
             gen_tables = gen_exec.get("tables", [])
             if gen_tables and isinstance(gen_tables, list):
-                # take first table
                 first = gen_tables[0] if gen_tables else {"columns": [], "rows": []}
                 row["returned_rows"] = [
                     {c: r[idx] for idx, c in enumerate(first.get("columns", [])) if idx < len(r)}
@@ -110,18 +148,26 @@ def generate_and_evaluate_query(
                 row["returned_rows_count"] = gen_exec.get("returned_rows_count", len(row.get("returned_rows", [])))
             row["returned_exec_stats"] = gen_exec.get("exec_stats", {})
 
-            # If execution reported an error in exec_stats or returned an error-like structure,
-            # mark the row status accordingly so callers know execution failed.
-            gen_err_field = None
+            # If generated execution failed, short-circuit and return the failure
             try:
-                gen_err_field = row["returned_exec_stats"].get("error")
+                if row["returned_exec_stats"].get("error"):
+                    row["status"] = "execution_failed"
+                    # For backward compatibility surface generated exec stats in returned_exec_stats
+                    # and avoid running expected query.
+                    # Strip full row lists to avoid leaking data in outward-facing response
+                    if "returned_rows" in row:
+                        del row["returned_rows"]
+                    if "expected_rows" in row:
+                        del row["expected_rows"]
+                    return row
             except Exception:
-                gen_err_field = None
-            if gen_err_field:
                 row["status"] = "execution_failed"
+                return row
 
+            # Generated succeeded; now run expected (if provided)
             if row.get("expected_query"):
-                exp_exec = kql_exec.execute_kql_query(row.get("expected_query"))
+                exp_q = _normalize_kql(row.get("expected_query"))
+                exp_exec = kql_exec.execute_kql_query(exp_q)
                 exp_tables = exp_exec.get("tables", [])
                 if exp_tables and isinstance(exp_tables, list):
                     first = exp_tables[0] if exp_tables else {"columns": [], "rows": []}
@@ -134,16 +180,20 @@ def generate_and_evaluate_query(
                     row["expected_rows"] = exp_exec.get("rows", [])
                     row["expected_rows_count"] = exp_exec.get("returned_rows_count", len(row.get("expected_rows", [])))
                 row["expected_exec_stats"] = exp_exec.get("exec_stats", {})
-                # Mark expected execution failure if present
+
+                # If expected execution failed, short-circuit and return expected failure
                 try:
                     if row["expected_exec_stats"].get("error"):
-                        row["status"] = "execution_failed"
+                        row["status"] = "expected_execution_failed"
+                        # Strip full row lists to avoid leaking data
+                        if "returned_rows" in row:
+                            del row["returned_rows"]
+                        if "expected_rows" in row:
+                            del row["expected_rows"]
+                        return row
                 except Exception:
-                    pass
-            else:
-                row["expected_rows"] = []
-                row["expected_rows_count"] = row.get("expected_rows_count")
-                row["expected_exec_stats"] = {}
+                    row["status"] = "expected_execution_failed"
+                    return row
         else:
             row["returned_rows"] = []
             row["returned_rows_count"] = 0

@@ -5,7 +5,8 @@ All methods are heavily commented for clarity and learning.
 """
 from azure.identity import AzureCliCredential, DefaultAzureCredential
 from azure.core.credentials import AccessToken
-from azure.monitor.query import LogsQueryClient, LogsQueryStatus
+from azure.monitor.query import LogsQueryStatus
+import utils.kql_exec as kql_exec
 from datetime import datetime, timedelta
 
 class UserTokenCredential:
@@ -40,7 +41,11 @@ class AzureMonitorAgent:
             except Exception:
                 # Fallback to DefaultAzureCredential (env vars, managed identity, etc.)
                 self.credential = DefaultAzureCredential()
-        self.client = LogsQueryClient(self.credential)
+        # For testability and optional SDK presence, use the shared get_logs_client helper
+        try:
+            self.client = kql_exec.get_logs_client(credential=self.credential)
+        except Exception:
+            self.client = None
 
     def query_log_analytics(self, workspace_id, kql_query, timespan=None):
         """
@@ -53,35 +58,18 @@ class AzureMonitorAgent:
             dict: Query results or error message.
         """
         try:
-            response = self.client.query_workspace(
-                workspace_id=workspace_id,
-                query=kql_query,
-                timespan=timespan
-            )
-            # Convert LogsTable objects to dicts manually
-            if response.status == LogsQueryStatus.SUCCESS:
-                tables = []
-                for table in response.tables:
-                    # Defensive: skip if table is not a LogsTable object
-                    if not hasattr(table, 'name') or not hasattr(table, 'columns') or not hasattr(table, 'rows'):
-                        continue
-                    # Defensive: columns may be a list of dicts or strings, handle both
-                    columns = []
-                    for col in getattr(table, 'columns', []):
-                        if hasattr(col, 'name'):
-                            columns.append(col.name)
-                        elif isinstance(col, dict) and 'name' in col:
-                            columns.append(col['name'])
-                        else:
-                            columns.append(str(col))
-                    table_dict = {
-                        'name': getattr(table, 'name', ''),
-                        'columns': columns,
-                        'rows': getattr(table, 'rows', [])
-                    }
-                    tables.append(table_dict)
+            # Use the shared execution helper so behavior is consistent across
+            # the codebase and so tests can monkeypatch `utils.kql_exec.execute_kql_query`.
+            exec_result = kql_exec.execute_kql_query(kql=kql_query, workspace_id=workspace_id, client=self.client, timespan=timespan)
+            # exec_result is a dict with keys: tables, returned_rows_count, exec_stats
+            tables = exec_result.get("tables", [])
+            if tables:
                 return {"tables": tables}
-            else:
-                return {"error": getattr(response, 'partial_error', None)}
+            # If SDK returned an exec_stats error, surface it
+            exec_stats = exec_result.get("exec_stats", {}) or {}
+            if exec_stats.get("error"):
+                return {"error": exec_stats.get("error")}
+            # Otherwise, if there's a partial error or no tables, return a generic error
+            return {"error": exec_result.get("error") or exec_stats.get("raw_status") or "Query failed"}
         except Exception as e:
             return {"error": str(e)}

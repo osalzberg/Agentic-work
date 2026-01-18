@@ -2408,7 +2408,7 @@ def evaluate_query():
         success: bool
         execution_success: bool - Whether both queries executed successfully
         generated_error: str (optional) - Error from generated query
-        expected_error: str (optional) - Error from expected query
+        expected_kql_exec_error: str (optional) - Error from expected query
         score: dict (optional) - Scoring results if both queries succeeded
     """
     global agent
@@ -2422,6 +2422,19 @@ def evaluate_query():
                         "error": "Agent not initialized. Please setup workspace first.",
                     }
                 ),
+                400,
+            )
+
+        # Ensure the workspace is configured on the agent before attempting execution.
+        # This prevents calling the Azure SDK without a workspace_id which leads to
+        # confusing serialization errors like "No value for given attribute".
+        try:
+            workspace_id = getattr(agent, "workspace_id", None)
+        except Exception:
+            workspace_id = None
+        if not workspace_id:
+            return (
+                jsonify({"success": False, "error": "Workspace not configured. Please call /api/setup with a workspace_id."}),
                 400,
             )
 
@@ -2479,32 +2492,79 @@ def evaluate_query():
         exp_exec_stats = res.get("expected_exec_stats") or {}
 
         # Detect generated execution error.
-        # Priority: explicit exec_stats error (server/SDK) should take precedence.
-        # Do NOT treat a benign 'message' string (e.g. 'Query executed successfully')
-        # on the `generated_query` dict as an error unless the payload indicates an error.
+        # Prefer a generator-provided error/message when it appears explicit and informative
+        # (e.g., the agent indicates `type: 'query_error'` or an `error` field is present).
+        # Fall back to exec_stats error when generator did not provide one.
         gen_err = None
-        if isinstance(gen_exec_stats, dict):
-            gen_err = gen_exec_stats.get("error") or gen_exec_stats.get("message")
-
-        # If exec_stats did not indicate an error, inspect generated_query object
-        if not gen_err and isinstance(gen_q, dict):
-            # If the generator explicitly marked an error type, respect it
+        if isinstance(gen_q, dict):
+            # If the generator explicitly marked an error type, prefer that message
             qtype = (gen_q.get("type") or "").lower()
             if qtype == "query_error":
                 gen_err = gen_q.get("error") or gen_q.get("message")
             else:
-                # If generated_query is expected to be a string-like object, consider
-                # absence of a kql_query a failure. Only treat 'message' as error when
-                # it contains failure keywords.
-                if not gen_q.get("kql_query"):
-                    msg = gen_q.get("message") or ""
-                    if any(k in msg.lower() for k in ("error", "failed", "could not", "no value")):
-                        gen_err = msg
+                # If generator returned an error field, prefer it
+                gen_err = gen_q.get("error") or None
 
-        # Detect expected execution error
+        # If no generator-level error found, consider exec_stats
+        if not gen_err and isinstance(gen_exec_stats, dict):
+            gen_err = gen_exec_stats.get("error") or gen_exec_stats.get("message")
+
+        # If still no gen_err, perform the benign-message heuristic on generated_query.message
+        if not gen_err and isinstance(gen_q, dict):
+            if not gen_q.get("kql_query"):
+                msg = gen_q.get("message") or ""
+                if any(k in msg.lower() for k in ("error", "failed", "could not", "no value")):
+                    gen_err = msg
+
+        # If we have both a generator-level message and an exec_stats message, choose
+        # the more informative one. Heuristics: prefer messages mentioning table/column
+        # resolution or 'where', or the longer message when content differs.
+        def _informative_score(s: str) -> int:
+            if not s:
+                return 0
+            s_lower = s.lower()
+            score = len(s.split())
+            if "where" in s_lower or "failed to resolve" in s_lower or "table" in s_lower or "column" in s_lower:
+                score += 10
+            if "no value" in s_lower:
+                score -= 5
+            return score
+
+        # Normalize raw exec_stats error too
+        gen_err_raw = gen_err
+        exec_err_raw = None
+        if isinstance(gen_exec_stats, dict):
+            exec_err_raw = gen_exec_stats.get("error") or gen_exec_stats.get("message")
+            if exec_err_raw:
+                try:
+                    from logs_agent import extract_innermost_error
+
+                    exec_err_raw = extract_innermost_error(exec_err_raw)
+                except Exception:
+                    exec_err_raw = exec_err_raw
+
+        # Pick best between gen_err_raw and exec_err_raw
+        if gen_err_raw and exec_err_raw and gen_err_raw != exec_err_raw:
+            gen_score = _informative_score(str(gen_err_raw))
+            exec_score = _informative_score(str(exec_err_raw))
+            gen_err = gen_err_raw if gen_score >= exec_score else exec_err_raw
+        elif not gen_err and exec_err_raw:
+            gen_err = exec_err_raw
+
+        # Detect expected execution error and normalize it to None when there is no error
         exp_err = None
         if isinstance(exp_exec_stats, dict):
             exp_err = exp_exec_stats.get("error") or exp_exec_stats.get("message")
+            if exp_err:
+                try:
+                    from logs_agent import extract_innermost_error
+
+                    exp_err = extract_innermost_error(exp_err)
+                except Exception:
+                    exp_err = exp_err
+            # normalize empty strings/whitespace to None
+            if isinstance(exp_err, str):
+                exp_err = exp_err.strip() or None
 
         execution_success = gen_err is None and exp_err is None
 
@@ -2518,14 +2578,29 @@ def evaluate_query():
             gen_q_val = gen_q
 
         if not execution_success:
-            # Prefer generated error, fallback to expected error
-            err_msg = gen_err or exp_err or "Query execution failed"
-            result_obj = {
-                "type": "query_error",
-                "kql_query": gen_q_val,
-                "error": err_msg,
-                "message": f"Query execution failed: {err_msg}",
-            }
+            # If the generated query itself failed, surface it as a query_error.
+            # If only the expected query failed (gen executed successfully), return
+            # query_success with the generated data and surface the expected error
+            # separately so the UI can show both the generated results and the expected error.
+            gen_failed = gen_err is not None
+            exp_failed = exp_err is not None
+            if gen_failed:
+                err_msg = gen_err or exp_err or "Query execution failed"
+                result_obj = {
+                    "type": "query_error",
+                    "kql_query": gen_q_val,
+                    "error": err_msg,
+                    "message": f"Query execution failed: {err_msg}",
+                }
+            else:
+                # Generated query succeeded; show success and include expected error separately
+                result_obj = {
+                    "type": "query_success",
+                    "kql_query": gen_q_val,
+                    "data": (gen_q.get("data") if isinstance(gen_q, dict) else None),
+                    "message": "Generated query executed successfully; expected query failed",
+                    "expected_kql_exec_error": exp_err,
+                }
         else:
             # Execution succeeded; we don't return full rows here, so surface a no-data placeholder
             result_obj = {
@@ -2540,7 +2615,7 @@ def evaluate_query():
                 "success": True,
                 "execution_success": execution_success,
                 "generated_error": gen_err,
-                "expected_error": exp_err,
+                "expected_kql_exec_error": exp_err,
                 "generated_query": res.get("generated_query"),
                 "generated_exec_stats": gen_exec_stats,
                 "expected_exec_stats": exp_exec_stats,

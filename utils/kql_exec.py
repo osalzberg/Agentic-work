@@ -55,9 +55,32 @@ def execute_kql_query(
 
     # If a real client is available, call the Azure SDK
     if logs_client is not None:
+        # The Azure LogsQueryClient requires a workspace id for `query_workspace`.
+        # If the caller didn't provide one, return a clear error instead of
+        # letting the SDK raise a generic serialization ValueError.
+        if not workspace_id:
+            elapsed = time.time() - start
+            return {
+                "tables": [],
+                "returned_rows_count": 0,
+                "exec_stats": {
+                    "error": "workspace_id is required for LogsQueryClient.query_workspace",
+                    "elapsed_sec": elapsed,
+                    "exception_type": "ValueError",
+                },
+            }
         try:
+            # Normalize KQL string: unescape common escape sequences such as \" -> "
+            try:
+                if isinstance(kql, str):
+                    kql_norm = kql.replace('\\"', '"')
+                else:
+                    kql_norm = kql
+            except Exception:
+                kql_norm = kql
+
             resp = logs_client.query_workspace(
-                workspace_id=workspace_id, query=kql, timespan=timespan
+                workspace_id=workspace_id, query=kql_norm, timespan=timespan
             )
             tables = []
             if hasattr(resp, "tables") and resp.tables:
@@ -73,7 +96,31 @@ def execute_kql_query(
             return {"tables": tables, "returned_rows_count": sum(t.get("row_count", 0) for t in tables), "exec_stats": exec_stats}
         except Exception as e:
             elapsed = time.time() - start
-            return {"tables": [], "returned_rows_count": 0, "exec_stats": {"error": str(e), "elapsed_sec": elapsed}}
+            err_str = str(e)
+            raw_exc = None
+            try:
+                # Try to extract an innermost error message if available
+                from logs_agent import extract_innermost_error
+
+                err_str = extract_innermost_error(err_str)
+            except Exception:
+                pass
+            try:
+                import traceback
+
+                raw_exc = traceback.format_exc()
+            except Exception:
+                raw_exc = repr(e)
+            return {
+                "tables": [],
+                "returned_rows_count": 0,
+                "exec_stats": {
+                    "error": err_str,
+                    "elapsed_sec": elapsed,
+                    "exception_type": type(e).__name__,
+                    "raw_exception": raw_exc,
+                },
+            }
 
     # Fallback behavior when no SDK client available: try to delegate to local kql_client
     try:

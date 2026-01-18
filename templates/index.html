@@ -1905,41 +1905,6 @@
         <h1 style="color: #fff; font-size: 2.8rem; font-weight: 300; margin-bottom: 10px; letter-spacing: 0.1px; font-family: sans-serif;">NL2KQL Benchmark</h1>
         <div style="color: hsl(0 0% 100% / 0.85); font-size: 1.18rem; font-family: sans-serif; font-weight: 300; letter-spacing: 0.1px;">Measure natural language to KQL translation accuracy</div>
     </div>
-    <div class="container glass-card" style="max-width: 900px; margin: -30px auto 0 auto; padding: 38px 36px 32px 36px;">
-        <div class="main-content" style="padding: 0;">
-            <!-- Setup Section -->
-            <div class="setup-section">
-                <h2>🔧 Workspace Setup</h2>                <div class="input-group">
-                    <input type="text" id="workspaceId" placeholder="Enter your Log Analytics Workspace ID" value="81a662b5-8541-481b-977d-5d956616ac5e">
-                    <button id="setWorkspaceBtn" class="btn btn-primary workspace-btn" aria-live="polite" aria-label="Set workspace">
-                        <span class="ws-icon-slot" aria-hidden="true">
-                            <span class="ws-spinner"></span>
-                            <span class="ws-success">✔</span>
-                        </span>
-                        <span class="ws-label">🚀 Connect Workspace</span>
-                    </button>
-                </div>
-                <div id="setupStatus" style="display:none"></div>
-                <div class="schema-controls" style="display: none;">
-                    <button class="schema-primary-btn" id="showSchemaBtn" onclick="toggleSchema()" aria-expanded="false" aria-controls="schemaTreeContainer">
-                        <span class="icon" aria-hidden="true"></span>
-                        <span>Schema</span>
-                    </button>
-                    <div id="schemaStats" class="schema-stats" style="display:none;"></div>
-                </div>
-                <div id="schemaTreeContainer" class="schema-tree-container">
-                    <div class="schema-tree-search" style="margin-bottom:10px;">
-                        <input type="text" id="schemaSearch" placeholder="Filter resource types or tables..." oninput="filterSchema()" disabled>
-                    </div>
-                    <ul id="schemaTree" class="schema-tree"></ul>
-                </div>
-                <!-- Scoring System Button -->
-                <div style="margin-top: 18px; text-align: right;">
-                    <button id="showScoringBtn" class="btn btn-secondary" style="font-size: 1rem; padding: 10px 22px;" onclick="openScoringModal()">
-                        📖 How scoring works
-                    </button>
-                </div>
-            </div>
     <!-- Scoring System Modal -->
     <div id="scoringModal" style="display:none; position:fixed; z-index:9999; left:0; top:0; width:100vw; height:100vh; background:rgba(40,40,60,0.45);">
         <div style="background:#fff; max-width:700px; margin:60px auto; border-radius:18px; box-shadow:0 8px 40px rgba(0,0,0,0.18); padding:0 0 24px 0; position:relative;">
@@ -2879,6 +2844,14 @@ async function askQuestion() {
         return;
     }
 
+    // Ensure workspaceId input contains a value
+    const workspaceIdField = document.getElementById('workspaceId');
+    const workspaceIdValue = workspaceIdField ? workspaceIdField.value.trim() : '';
+    if (!workspaceIdValue) {
+        showError('Workspace not configured. Please set a workspace ID in the input field.');
+        return;
+    }
+
     // Show initial loading
     showLoading('🚀 Starting query process...');
     
@@ -3018,6 +2991,13 @@ async function processQuestionWithRetry(question) {
             // Simulate translation time
             await new Promise(resolve => setTimeout(resolve, 800 + (retryCount * 500)));
             
+            // Ensure workspace is configured before making request
+            const workspaceIdField = document.getElementById('workspaceId');
+            const workspaceIdValue = workspaceIdField ? workspaceIdField.value.trim() : '';
+            if (!workspaceIdValue) {
+                showError('Workspace not configured. Please set a workspace ID in the input field.');
+                return;
+            }
             // Make the actual API call
             updateProgress(40, '📡 Sending request to server...');
             const response = await fetch('/api/generate-kql', {
@@ -4954,7 +4934,7 @@ async function processQuestionWithRetry(question) {
                         } else {
                             // Execution failed
                             executionFailed = true;
-                            executionError = evalData.generated_error || evalData.expected_error || 'Query execution failed';
+                            executionError = evalData.generated_error || evalData.expected_kql_exec_error || 'Query execution failed';
                             queryOutput = executionError;
                             finalStatus = 'failed';
                         }
@@ -5449,34 +5429,7 @@ async function processQuestionWithRetry(question) {
 
     </script>
 
-    <!-- CACHE OVERRIDE: Force setup section to be visible even if cached version has display:none -->
-    <script>
-    (function() {
-        // Run immediately and also on DOMContentLoaded to ensure it works
-        function forceSetupVisible() {
-            const setupSection = document.querySelector('.setup-section');
-            if (setupSection) {
-                // Remove any inline style that might hide it
-                if (setupSection.style.display === 'none') {
-                    setupSection.style.display = '';
-                    console.log('✓ Setup section visibility forced by cache override script');
-                }
-                // Also ensure it's visible via direct style
-                setupSection.style.display = 'block';
-            }
-        }
-        
-        // Try immediately
-        forceSetupVisible();
-        
-        // And on DOMContentLoaded
-        if (document.readyState === 'loading') {
-            document.addEventListener('DOMContentLoaded', forceSetupVisible);
-        } else {
-            forceSetupVisible();
-        }
-    })();
-    </script>
+    
 </body>
 </html>
 
